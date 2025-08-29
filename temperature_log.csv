@@ -1,0 +1,31 @@
+1692576000,room,Room,11.5
+1692579600,room,Room,11.7
+1692583200,room,Room,11.6
+1692586800,room,Room,11.8
+1692590400,room,Room,12.0
+1692594000,room,Room,12.1
+1692597600,room,Room,12.2
+1692601200,room,Room,12.3
+1692604800,room,Room,12.4
+1692691200,room,Room,12.5
+1692694800,room,Room,12.6
+1692698400,room,Room,12.7
+1692787600,room,Room,12.8
+1692788200,room,Room,12.9
+1692788800,room,Room,13.0
+
+1692576000,sensor1,Johanniter,12.5
+1692579600,sensor1,Johanniter,12.7
+1692583200,sensor1,Johanniter,12.6
+1692586800,sensor2,Solaris,13.2
+1692590400,sensor2,Solaris,13.1
+1692594000,sensor2,Solaris,13.3
+1692597600,sensor3,Souvignier gris,14.0
+1692601200,sensor3,Souvignier gris,14.2
+1692604800,sensor3,Souvignier gris,14.1
+1692691200,sensor1,Johanniter,12.8
+1692694800,sensor2,Solaris,13.4
+1692698400,sensor3,Souvignier gris,14.3
+1692787600,sensor1,Johanniter,13.0
+1692788200,sensor2,Solaris,13.6
+1692788800,sensor3,Souvignier gris,14.5

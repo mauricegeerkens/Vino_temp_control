@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>7-Daags temperatuur overzicht</title>
+  <link href="/static/bootstrap.min.css" rel="stylesheet">
+    <style>
+    .chartjs-render-monitor, .card, .legend, .chartjs-legend {
+      z-index: 2 !important;
+      position: relative !important;
+    }
+    .card.bg-dark {
+      background: #ffffffbd !important;
+      color: #222 !important;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+    }
+    body {
+      background: url('/static/images/background.jpg') no-repeat center center fixed;
+      background-size: cover;
+      min-height: 100vh;
+    }
+    h1, h2, h3, h4, h5, h6, label, th, td, .btn, .card, .text-light, .form-control, .table, .legend, .chartjs-render-monitor {
+      color: #fff !important;
+      text-shadow: none !important;
+      opacity: 1 !important;
+    }
+    </style>
+</head>
+<body class="bg-dark text-light">
+<div class="container py-4">
+    <h1 class="mb-4">7-Daags temperatuur overzicht</h1>
+    <a href="/" class="btn btn-outline-light mb-4">Terug naar hoofdpagina</a>
+    <div class="card p-4 bg-dark bg-opacity-75">
+  <canvas id="tempHistogram" height="320"></canvas>
+    </div>
+</div>
+<script src="/static/chart.js"></script>
+<script src="/static/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>
+fetch('/api/history')
+  .then(res => res.json())
+  .then(data => {
+    // Group by sensor name
+    const sensors = {};
+    data.forEach(d => {
+      if (!sensors[d.name]) sensors[d.name] = [];
+      sensors[d.name].push({
+        x: new Date(d.timestamp * 1000),
+        y: d.temperature
+      });
+    });
+    const datasets = Object.keys(sensors).map(name => ({
+      label: name || 'Unknown',
+      data: sensors[name],
+      fill: false,
+      borderColor: '#' + Math.floor(Math.random()*16777215).toString(16),
+      tension: 0.1
+    }));
+    new Chart(document.getElementById('tempHistogram').getContext('2d'), {
+      type: 'line',
+      data: { datasets },
+      options: {
+        scales: {
+          x: { type: 'time', time: { unit: 'day' }, title: { display: true, text: 'Date' } },
+          y: { title: { display: true, text: 'Temperature (°C)' } }
+        },
+        plugins: { legend: { display: true } }
+      }
+    });
+  });
+</script>
+<script src="/static/bootstrap.bundle.min.js"></script>
+</body>
+</html>

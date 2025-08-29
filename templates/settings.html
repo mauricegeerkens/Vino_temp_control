@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sensor kalibratie menu</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: url('/static/images/background.jpg') no-repeat center center fixed;
+            background-size: cover;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="bg-dark text-light">
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mb-0">Sensor kalibratie menu</h1>
+        <button id="shutdownBtn" class="btn btn-danger">Afsluiten</button>
+    </div>
+    <a href="/" class="btn btn-outline-light mb-4">Terug naar hoofdpagina</a>
+    <div id="sensor-list"></div>
+</div>
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+document.getElementById('shutdownBtn').onclick = function() {
+    if (confirm('Weet je zeker dat je de Raspberry Pi wilt uitschakelen?')) {
+        fetch('/api/shutdown', {method: 'POST'}).then(() => {
+            alert('Shutdown initiated. You may now safely power off the device after the screen goes black.');
+        });
+    }
+};
+function loadSensors() {
+    fetch('/api/temps').then(r => r.json()).then(temps => {
+        fetch('/api/offsets').then(r => r.json()).then(offsets => {
+            fetch('/api/names').then(r => r.json()).then(names => {
+                let html = '<table class="table table-dark table-bordered"><thead><tr><th>Sensor ID</th><th>Name</th><th>Temperature (°C)</th><th>Offset</th><th>Set Offset</th><th>Set Name</th></tr></thead><tbody>';
+                Object.keys(temps).forEach(sensor_id => {
+                    html += `<tr>
+                        <td>${sensor_id}</td>
+                        <td id="name-${sensor_id}">${names[sensor_id] ?? ''}</td>
+                        <td>${temps[sensor_id]?.toFixed(2) ?? '--'}</td>
+                        <td id="offset-${sensor_id}">${offsets[sensor_id] ?? 0}</td>
+                        <td>
+                            <input type="number" step="0.01" class="form-control d-inline w-50" id="input-${sensor_id}" value="${offsets[sensor_id] ?? 0}">
+                            <button class="btn btn-sm btn-primary ms-2" onclick="setOffset('${sensor_id}')">Save</button>
+                        </td>
+                        <td>
+                            <input type="text" class="form-control d-inline w-50" id="nameinput-${sensor_id}" value="${names[sensor_id] ?? ''}">
+                            <button class="btn btn-sm btn-success ms-2" onclick="setName('${sensor_id}')">Save</button>
+                        </td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('sensor-list').innerHTML = html;
+            });
+        });
+    });
+}
+function setOffset(sensor_id) {
+    const val = document.getElementById('input-' + sensor_id).value;
+    fetch('/api/offsets', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({sensor_id: sensor_id, offset: val})
+    }).then(() => {
+        document.getElementById('offset-' + sensor_id).textContent = val;
+    });
+}
+function setName(sensor_id) {
+    const val = document.getElementById('nameinput-' + sensor_id).value;
+    fetch('/api/names', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({sensor_id: sensor_id, name: val})
+    }).then(() => {
+        document.getElementById('name-' + sensor_id).textContent = val;
+    });
+}
+loadSensors();
+</script>
+</body>
+</html>
