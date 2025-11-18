@@ -23,12 +23,12 @@ except ImportError:
     GPIO = MockGPIO()
 
 # GPIO Pin Configuration
-LIGHT_PIN = 22  # GPIO 22 (physical pin 15)
+LIGHT_PIN = 23  # GPIO 23 (physical pin 16) - TESTING
 
 # Initialize GPIO
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LIGHT_PIN, GPIO.OUT, initial=GPIO.LOW)  # Explicit initial state
-print(f"GPIO {LIGHT_PIN} initialized to LOW (OFF)")
+print(f"GPIO {LIGHT_PIN} (pin 16) initialized to LOW (OFF)")
 
 # Cleanup GPIO on exit
 def cleanup_light_gpio():
