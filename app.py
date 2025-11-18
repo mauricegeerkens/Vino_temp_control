@@ -1,15 +1,12 @@
-
 # --- Imports ---
 import csv
 import time
 import json
 import subprocess
+import atexit
 from flask import Flask, jsonify, request, render_template
 from sensor_reader import read_sensors, get_offsets, set_offset, get_names, set_name
 from control import TempController
-
-# --- App Setup ---
-app = Flask(__name__)
 
 # --- GPIO Setup ---
 try:
@@ -22,112 +19,44 @@ except ImportError:
         def output(self, *a, **kw): pass
         def cleanup(self): pass
     GPIO = MockGPIO()
-LIGHT_PIN = 22  # GPIO 22 (physical pin 15), change as needed
+
+# GPIO Pin Configuration
+LIGHT_PIN = 22  # GPIO 22 (physical pin 15)
+
+# Initialize GPIO
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LIGHT_PIN, GPIO.OUT)
 GPIO.output(LIGHT_PIN, GPIO.LOW)
 
-# --- Shutdown Endpoint ---
-@app.route('/api/shutdown', methods=['POST'])
-def api_shutdown():
-    subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
-    return jsonify({'status': 'shutting down'}), 200
+# Cleanup GPIO on exit
+def cleanup_light_gpio():
+    GPIO.output(LIGHT_PIN, GPIO.LOW)
+    GPIO.cleanup()
 
-# --- Imports ---
-import csv
-import time
-import json
-from flask import Flask, jsonify, request, render_template
-from sensor_reader import read_sensors, get_offsets, set_offset, get_names, set_name
-from control import TempController
+atexit.register(cleanup_light_gpio)
 
 # --- App Setup ---
 app = Flask(__name__)
-
-# --- GPIO Setup ---
-try:
-    import RPi.GPIO as GPIO
-except ImportError:
-    class MockGPIO:
-        BCM = OUT = HIGH = LOW = None
-        def setmode(self, *a, **kw): pass
-        def setup(self, *a, **kw): pass
-        def output(self, *a, **kw): pass
-        def cleanup(self): pass
-    GPIO = MockGPIO()
-LIGHT_PIN = 22  # GPIO 22 (physical pin 15), change as needed
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(LIGHT_PIN, GPIO.OUT)
-GPIO.output(LIGHT_PIN, GPIO.LOW)
-
-app = Flask(__name__)
-
-@app.route('/api/light', methods=['POST'])
-def api_light():
-    data = request.json
-    on = data.get('on', False)
-    GPIO.output(LIGHT_PIN, GPIO.HIGH if on else GPIO.LOW)
-    return jsonify({'on': on}), 200
-
-app = Flask(__name__)
-
-# --- Imports ---
-import csv
-import time
-import json
-from flask import Flask, jsonify, request, render_template
-from sensor_reader import read_sensors, get_offsets, set_offset, get_names, set_name
-from control import TempController
-
-# --- App Setup ---
-app = Flask(__name__)
-
-# --- GPIO Setup ---
-
-try:
-    import RPi.GPIO as GPIO
-except ImportError:
-    class MockGPIO:
-        BCM = OUT = HIGH = LOW = None
-        def setmode(self, *a, **kw): pass
-        def setup(self, *a, **kw): pass
-        def output(self, *a, **kw): pass
-        def cleanup(self): pass
-    GPIO = MockGPIO()
-
-LIGHT_PIN = 22  # GPIO 22 (physical pin 15), change as needed
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(LIGHT_PIN, GPIO.OUT)
-GPIO.output(LIGHT_PIN, GPIO.LOW)
 
 # --- Control Enable Persistence ---
 CONTROL_ENABLE_FILE = "control_enable.json"
+
 def load_control_enabled():
     try:
         with open(CONTROL_ENABLE_FILE, "r") as f:
             return json.load(f).get("enabled", True)
     except Exception:
         return True
+
 def save_control_enabled(enabled):
     with open(CONTROL_ENABLE_FILE, "w") as f:
         json.dump({"enabled": enabled}, f)
+
 control_enabled = load_control_enabled()
 
-
-
-# --- API Endpoints ---
-@app.route('/api/control_enable', methods=['POST'])
-def api_control_enable():
-    global control_enabled
-    data = request.json
-    enabled = data.get('enabled', True)
-    control_enabled = bool(enabled)
-    save_control_enabled(control_enabled)
-    return jsonify({'enabled': control_enabled}), 200
-
-# ...existing code...
-
+# --- Settings Persistence ---
 SETTINGS_FILE = "settings.json"
+
 def load_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
@@ -144,6 +73,28 @@ target = settings.get("target", 12.0)
 deviation = settings.get("deviation", 0.5)
 SAFETY_SENSOR_NAME = "SafetySensor"  # Change this to your safety sensor's name
 controller = TempController(target=target, deviation=deviation, safety_sensor_name=SAFETY_SENSOR_NAME, safety_off=28.0, safety_on=25.0)
+
+# --- API Endpoints ---
+@app.route('/api/light', methods=['POST'])
+def api_light():
+    data = request.json
+    on = data.get('on', False)
+    GPIO.output(LIGHT_PIN, GPIO.HIGH if on else GPIO.LOW)
+    return jsonify({'on': on}), 200
+
+@app.route('/api/shutdown', methods=['POST'])
+def api_shutdown():
+    subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
+    return jsonify({'status': 'shutting down'}), 200
+
+@app.route('/api/control_enable', methods=['POST'])
+def api_control_enable():
+    global control_enabled
+    data = request.json
+    enabled = data.get('enabled', True)
+    control_enabled = bool(enabled)
+    save_control_enabled(control_enabled)
+    return jsonify({'enabled': control_enabled}), 200
 
 @app.route('/api/names', methods=['GET'])
 def api_get_names():
@@ -227,8 +178,7 @@ def get_status():
     }
     return jsonify(status)
 
-
-
+# --- Page Routes ---
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -259,7 +209,7 @@ def api_history():
     return jsonify(data)
 
 @app.route('/settings')
-def settings():
+def settings_page():
     return render_template('settings.html')
 
 if __name__ == "__main__":

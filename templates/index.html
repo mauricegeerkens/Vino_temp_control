@@ -160,7 +160,7 @@ lightSwitch.onclick = function() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({on: lightOn})
     }).then(() => {
-        lightSwitchText.textContent = lightOn ? 'Licht Aan' : 'Licht Uit';
+        lightSwitchText.textContent = lightOn ? 'Licht Uit' : 'Licht Aan';
         lightSwitch.classList.toggle('btn-success', lightOn);
         lightSwitch.classList.toggle('btn-secondary', !lightOn);
     });
