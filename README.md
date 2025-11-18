@@ -23,7 +23,7 @@ A temperature control and monitoring system for a wine room and up to 3 external
 | DS18B20 Data     | 4    | 7   | 1-Wire Data (all temp sensors) |
 | Heating Relay    | 17   | 11  | Relay IN (Heating)  |
 | Cooling Relay    | 27   | 13  | Relay IN (Cooling)  |
-| Light Relay      | 22   | 15  | Relay IN (Light)    |
+| Light Relay      | 23   | 16  | Relay IN (Light)    |
 
 **Note:** All DS18B20 temperature sensors (wine room + up to 3 barrels) share GPIO 4 via the 1-Wire protocol.
 

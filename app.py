@@ -23,7 +23,7 @@ except ImportError:
     GPIO = MockGPIO()
 
 # GPIO Pin Configuration
-LIGHT_PIN = 23  # GPIO 23 (physical pin 16) - TESTING
+LIGHT_PIN = 23  # GPIO 23 (physical pin 16)
 
 # Initialize GPIO
 GPIO.setmode(GPIO.BCM)
