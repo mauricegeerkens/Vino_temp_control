@@ -11,6 +11,7 @@ from control import TempController
 # --- GPIO Setup ---
 try:
     import RPi.GPIO as GPIO
+    GPIO.setwarnings(False)  # Disable warnings about channels in use
 except ImportError:
     class MockGPIO:
         BCM = OUT = HIGH = LOW = None
@@ -18,6 +19,7 @@ except ImportError:
         def setup(self, *a, **kw): pass
         def output(self, *a, **kw): pass
         def cleanup(self): pass
+        def setwarnings(self, *a, **kw): pass
     GPIO = MockGPIO()
 
 # GPIO Pin Configuration
@@ -25,12 +27,16 @@ LIGHT_PIN = 22  # GPIO 22 (physical pin 15)
 
 # Initialize GPIO
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(LIGHT_PIN, GPIO.OUT)
-GPIO.output(LIGHT_PIN, GPIO.LOW)
+GPIO.setup(LIGHT_PIN, GPIO.OUT, initial=GPIO.LOW)  # Explicit initial state
+print(f"GPIO {LIGHT_PIN} initialized to LOW (OFF)")
 
 # Cleanup GPIO on exit
 def cleanup_light_gpio():
-    GPIO.output(LIGHT_PIN, GPIO.LOW)
+    try:
+        GPIO.output(LIGHT_PIN, GPIO.LOW)  # Turn off
+        print(f"GPIO {LIGHT_PIN} cleaned up")
+    except:
+        pass
     GPIO.cleanup()
 
 atexit.register(cleanup_light_gpio)
@@ -79,7 +85,10 @@ controller = TempController(target=target, deviation=deviation, safety_sensor_na
 def api_light():
     data = request.json
     on = data.get('on', False)
+    print(f"Light API called: on={on}, setting GPIO to {'HIGH' if on else 'LOW'}")
+    # Direct logic for active-HIGH relay modules
     GPIO.output(LIGHT_PIN, GPIO.HIGH if on else GPIO.LOW)
+    print(f"GPIO {LIGHT_PIN} set successfully")
     return jsonify({'on': on}), 200
 
 @app.route('/api/shutdown', methods=['POST'])

@@ -4,6 +4,7 @@
 # Try to import RPi.GPIO, fallback to mock if not available
 try:
     import RPi.GPIO as GPIO
+    GPIO.setwarnings(False)  # Disable GPIO warnings
 except ImportError:
     class MockGPIO:
         BCM = OUT = HIGH = LOW = None
@@ -11,6 +12,7 @@ except ImportError:
         def setup(self, *a, **kw): pass
         def output(self, *a, **kw): pass
         def cleanup(self): pass
+        def setwarnings(self, *a, **kw): pass
     GPIO = MockGPIO()
 import atexit
 
@@ -20,10 +22,8 @@ HEAT_PIN = 17  # GPIO 17 (physical pin 11)
 COOL_PIN = 27  # GPIO 27 (physical pin 13)
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(HEAT_PIN, GPIO.OUT)
-GPIO.setup(COOL_PIN, GPIO.OUT)
-GPIO.output(HEAT_PIN, GPIO.LOW)
-GPIO.output(COOL_PIN, GPIO.LOW)
+GPIO.setup(HEAT_PIN, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(COOL_PIN, GPIO.OUT, initial=GPIO.LOW)
 
 def cleanup_gpio():
     GPIO.output(HEAT_PIN, GPIO.LOW)

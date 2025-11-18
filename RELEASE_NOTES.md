@@ -1,4 +1,18 @@
-# Vino Temperature Control v0.5 - Release Notes
+# Vino Temperature Control - Release Notes
+
+## Version 0.6 - November 2025
+
+### Bug Fixes
+- Fixed GPIO warnings on startup
+- Improved light relay control with better debugging
+- Fixed GPIO initialization conflicts between app.py and control.py
+- Added explicit initial GPIO states for reliability
+- Enhanced error handling in GPIO cleanup
+
+### Improvements
+- Added console logging for light button debugging
+- Better GPIO setup with `initial` parameter
+- Disabled GPIO warnings to reduce console noise
 
 ## Version 0.5 - November 2025
 

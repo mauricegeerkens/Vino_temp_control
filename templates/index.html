@@ -135,9 +135,11 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+console.log('=== Script loaded ===');
 let controlEnabled = true;
 const controlEnableSwitch = document.getElementById('controlEnableSwitch');
 const controlEnableText = document.getElementById('controlEnableText');
+console.log('Control switch element:', controlEnableSwitch);
 controlEnableSwitch.onclick = function() {
     controlEnabled = !controlEnabled;
     fetch('/api/control_enable', {
@@ -153,16 +155,28 @@ controlEnableSwitch.onclick = function() {
 let lightOn = false;
 const lightSwitch = document.getElementById('lightSwitch');
 const lightSwitchText = document.getElementById('lightSwitchText');
+console.log('Light switch element:', lightSwitch);
 lightSwitch.onclick = function() {
+    console.log('=== Light button clicked! ===');
     lightOn = !lightOn;
+    console.log('Light button clicked, sending:', lightOn);
     fetch('/api/light', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({on: lightOn})
-    }).then(() => {
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Response data:', data);
         lightSwitchText.textContent = lightOn ? 'Licht Uit' : 'Licht Aan';
         lightSwitch.classList.toggle('btn-success', lightOn);
         lightSwitch.classList.toggle('btn-secondary', !lightOn);
+    })
+    .catch(error => {
+        console.error('Error toggling light:', error);
     });
 };
 function updateDashboard() {
