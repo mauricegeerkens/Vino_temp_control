@@ -1,5 +1,28 @@
 # Vino Temperature Control - Release Notes
 
+## Version 0.7 - November 2025
+
+### Changes
+- **Light relay GPIO updated**: Changed from GPIO 22 (pin 15) to GPIO 23 (pin 16)
+- **Documentation updates**: All pin assignments updated to reflect GPIO 23
+- **Verified working configuration**: Confirmed with physical relay module setup
+
+### GPIO Assignments
+- **GPIO 4 (Pin 7)**: DS18B20 1-Wire data bus
+- **GPIO 17 (Pin 11)**: Heating relay control
+- **GPIO 27 (Pin 13)**: Cooling relay control
+- **GPIO 23 (Pin 16)**: Light relay control ⬅️ UPDATED
+
+### Installation
+See `INSTALL.md` for detailed installation instructions.
+
+Quick install:
+```bash
+unzip vino_temp_control_v0.7.zip
+cd vino_temp_control_v0.7
+sudo ./install.sh
+```
+
 ## Version 0.6 - November 2025
 
 ### Bug Fixes
