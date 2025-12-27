@@ -135,7 +135,11 @@ def api_set_offset():
 
 @app.route('/api/temps')
 def get_temps():
-    temps = read_sensors()
+    sensors = read_sensors()
+    # Convert list to dictionary for backwards compatibility
+    temps = {}
+    for sensor in sensors:
+        temps[sensor['id']] = sensor['temperature']
     return jsonify(temps)
 
 @app.route('/api/control', methods=['POST'])

@@ -52,8 +52,17 @@ def read_sensors():
                         temps[sensor_id] = temp_c
         except Exception as e:
             temps[sensor_id] = None
+    
+    # Build sensors list with names
+    names = load_names()
     sensors = []
-    # ...existing code...
+    for sensor_id, temp in temps.items():
+        sensors.append({
+            'id': sensor_id,
+            'name': names.get(sensor_id, ''),
+            'temperature': temp
+        })
+    
     # Log readings for histogram
     log_temperature_data(sensors)
     return sensors
