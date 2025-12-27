@@ -1,5 +1,29 @@
 # Vino Temperature Control - Release Notes
 
+## Version 0.8.1 - December 2025
+
+### Features
+- **Named Sensor Mapping**: Sensors are now assigned to display positions by name instead of random discovery order
+- **Persistent Sensor Assignment**: Once named, sensors always appear in the correct position on the dashboard
+- **New API Endpoint**: Added `/api/temps_named` to retrieve temperatures organized by sensor name
+
+### Breaking Changes
+- **Sensor naming required**: Users must assign names to sensors via the Settings page:
+  - "Room" for klimaat kast (main room temperature)
+  - "Johanniter" for Johanniter barrel
+  - "Solaris" for Solaris barrel
+  - "Souvignier gris" for Souvignier gris barrel
+
+### Technical Changes
+- Modified `index.html` to use name-based sensor lookup instead of array index
+- Added `/api/temps_named` endpoint in `app.py` for name-based temperature retrieval
+
+### Migration Guide
+1. Update to version 0.8.1
+2. Go to Settings page (Sensor kalibratie)
+3. Assign exact names to each sensor as listed above
+4. Names are case-sensitive and must match exactly
+
 ## Version 0.7 - November 2025
 
 ### Changes

@@ -180,12 +180,11 @@ lightSwitch.onclick = function() {
     });
 };
 function updateDashboard() {
-    fetch('/api/temps').then(r => r.json()).then(data => {
-        const keys = Object.keys(data);
-        document.getElementById('room_temp').textContent = data[keys[0]]?.toFixed(2) ?? '--';
-        document.getElementById('barrel1_temp').textContent = data[keys[1]]?.toFixed(2) ?? '--';
-        document.getElementById('barrel2_temp').textContent = data[keys[2]]?.toFixed(2) ?? '--';
-        document.getElementById('barrel3_temp').textContent = data[keys[3]]?.toFixed(2) ?? '--';
+    fetch('/api/temps_named').then(r => r.json()).then(data => {
+        document.getElementById('room_temp').textContent = data['Room']?.toFixed(2) ?? '--';
+        document.getElementById('barrel1_temp').textContent = data['Johanniter']?.toFixed(2) ?? '--';
+        document.getElementById('barrel2_temp').textContent = data['Solaris']?.toFixed(2) ?? '--';
+        document.getElementById('barrel3_temp').textContent = data['Souvignier gris']?.toFixed(2) ?? '--';
     });
     fetch('/api/status').then(r => r.json()).then(data => {
         document.getElementById('current_target').textContent = data.target?.toFixed(2) ?? '--';

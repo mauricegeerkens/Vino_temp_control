@@ -142,6 +142,17 @@ def get_temps():
         temps[sensor['id']] = sensor['temperature']
     return jsonify(temps)
 
+@app.route('/api/temps_named')
+def get_temps_named():
+    sensors = read_sensors()
+    # Return temperatures organized by sensor name
+    temps_by_name = {}
+    for sensor in sensors:
+        name = sensor.get('name', '')
+        if name:  # Only include sensors that have been named
+            temps_by_name[name] = sensor['temperature']
+    return jsonify(temps_by_name)
+
 @app.route('/api/control', methods=['POST'])
 def set_control():
     data = request.json
