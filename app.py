@@ -4,6 +4,7 @@ import time
 import json
 import subprocess
 import atexit
+import threading
 from flask import Flask, jsonify, request, render_template
 from sensor_reader import read_sensors, get_offsets, set_offset, get_names, set_name
 from control import TempController
@@ -98,6 +99,41 @@ target = settings.get("target", 12.0)
 deviation = settings.get("deviation", 0.5)
 SAFETY_SENSOR_NAME = "SafetySensor"  # Change this to your safety sensor's name
 controller = TempController(target=target, deviation=deviation, safety_sensor_name=SAFETY_SENSOR_NAME, safety_off=28.0, safety_on=25.0)
+
+# --- Control Loop ---
+def control_loop():
+    """Background thread that controls heating/cooling relays"""
+    print("Control loop started")
+    while True:
+        try:
+            if control_enabled:
+                sensors = read_sensors()
+                room_temp = None
+                safety_temp = None
+                
+                for sensor in sensors:
+                    name = sensor.get('name', "")
+                    temp = sensor.get('temperature', None)
+                    if name.lower() == "room":
+                        room_temp = temp
+                    if name == controller.safety_sensor_name:
+                        safety_temp = temp
+                
+                # Update the relays based on current temperature
+                controller.update_relays(room_temp, safety_temp)
+            else:
+                # If control is disabled, turn off both relays
+                from control import GPIO, HEAT_PIN, COOL_PIN
+                GPIO.output(HEAT_PIN, GPIO.LOW)
+                GPIO.output(COOL_PIN, GPIO.LOW)
+        except Exception as e:
+            print(f"Error in control loop: {e}")
+        
+        time.sleep(5)  # Check every 5 seconds
+
+# Start control loop in background thread
+control_thread = threading.Thread(target=control_loop, daemon=True)
+control_thread.start()
 
 # --- API Endpoints ---
 @app.route('/api/light', methods=['POST'])

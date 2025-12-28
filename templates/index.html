@@ -262,6 +262,8 @@ document.getElementById('targetForm').onsubmit = function(e) {
         // Clear dirty flags after successful save
         document.getElementById('targetInput').dataset.dirty = '';
         document.getElementById('deviationInput').dataset.dirty = '';
+        // Trigger immediate dashboard update to refresh all data
+        updateDashboard();
     });
 };
 
@@ -270,7 +272,7 @@ document.getElementById('targetForm').onsubmit = function(e) {
 document.getElementById('targetInput').dataset.dirty = '';
 document.getElementById('deviationInput').dataset.dirty = '';
 updateDashboard(); // Load initial state immediately
-setInterval(updateDashboard, 5000); // Then refresh every 5 seconds
+setInterval(updateDashboard, 2000); // Refresh every 2 seconds for more responsive updates
 </script>
 </body>
 </html>
