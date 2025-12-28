@@ -1,5 +1,46 @@
 # Vino Temperature Control - Release Notes
 
+## Version 1.3 - December 2025
+
+### Major Performance Improvements
+- **Ultra-Fast Sensor Data Caching**: 
+  - Implemented 0.5-second cache for sensor readings
+  - All API endpoints now use cached data for instant responses
+  - Eliminates redundant sensor reads across multiple simultaneous requests
+
+- **Watchdog System for Freeze Prevention**:
+  - New `/api/watchdog` endpoint monitors backend health
+  - Tracks last sensor access timestamp
+  - Frontend automatically detects and warns when system becomes unresponsive
+  - Visual warning banner appears after 3 consecutive watchdog failures
+
+- **Drastically Improved Update Rates**:
+  - Frontend polling increased from 2s to **500ms** (4x faster)
+  - Control loop update interval reduced from 5s to **1s** (5x faster)
+  - Near-instant UI responsiveness for all controls
+
+### Enhanced Reliability
+- **Request Timeout Protection**:
+  - 3-second timeouts on all standard API requests
+  - 5-second timeout for large history data requests
+  - Prevents hanging/freezing when backend is slow or unresponsive
+
+- **Comprehensive Error Handling**:
+  - All fetch requests include error catching and logging
+  - User-friendly error messages when operations fail
+  - Graceful degradation instead of complete UI freeze
+
+### Technical Details
+- Sensor cache with thread-safe locking mechanism
+- Watchdog timestamp updates on every sensor access
+- Health monitoring considers system unhealthy after 10s of inactivity
+- Frontend freeze detection triggers warning after 3 failed watchdog checks
+
+### Bug Fixes
+- Fixed potential race conditions in concurrent sensor reads
+- Improved stability under high request load
+- Better handling of network timeouts
+
 ## Version 1.0 - December 2025
 
 ### Major Features

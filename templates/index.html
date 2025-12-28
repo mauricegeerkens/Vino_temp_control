@@ -138,10 +138,56 @@
 console.log('=== Script loaded ===');
 let controlEnabled = true;
 let lightOn = false;
+let watchdogFailures = 0;
 const controlEnableSwitch = document.getElementById('controlEnableSwitch');
 const controlEnableText = document.getElementById('controlEnableText');
 const lightSwitch = document.getElementById('lightSwitch');
 const lightSwitchText = document.getElementById('lightSwitchText');
+
+// Watchdog monitor
+function checkWatchdog() {
+    fetch('/api/watchdog', {
+        signal: AbortSignal.timeout(2000)  // 2 second timeout
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.healthy) {
+            console.warn('Backend watchdog unhealthy!');
+            watchdogFailures++;
+            if (watchdogFailures > 3) {
+                showFreezeWarning();
+            }
+        } else {
+            watchdogFailures = 0;
+            hideFreezeWarning();
+        }
+    })
+    .catch(error => {
+        console.error('Watchdog check failed:', error);
+        watchdogFailures++;
+        if (watchdogFailures > 3) {
+            showFreezeWarning();
+        }
+    });
+}
+
+function showFreezeWarning() {
+    if (!document.getElementById('freezeWarning')) {
+        const warning = document.createElement('div');
+        warning.id = 'freezeWarning';
+        warning.className = 'alert alert-danger position-fixed top-0 start-50 translate-middle-x mt-3';
+        warning.style.zIndex = '9999';
+        warning.innerHTML = '⚠️ System may be frozen. Please refresh the page.';
+        document.body.appendChild(warning);
+    }
+}
+
+function hideFreezeWarning() {
+    const warning = document.getElementById('freezeWarning');
+    if (warning) {
+        warning.remove();
+    }
+}
 
 // Update UI for control enable switch
 function updateControlUI(enabled) {
@@ -190,13 +236,25 @@ lightSwitch.onclick = function() {
     });
 };
 function updateDashboard() {
-    fetch('/api/temps_named').then(r => r.json()).then(data => {
+    fetch('/api/temps_named', {
+        signal: AbortSignal.timeout(3000)  // 3 second timeout
+    })
+    .then(r => r.json())
+    .then(data => {
         document.getElementById('room_temp').textContent = data['Room']?.toFixed(2) ?? '--';
         document.getElementById('barrel1_temp').textContent = data['Johanniter']?.toFixed(2) ?? '--';
         document.getElementById('barrel2_temp').textContent = data['Solaris']?.toFixed(2) ?? '--';
         document.getElementById('barrel3_temp').textContent = data['Souvignier gris']?.toFixed(2) ?? '--';
+    })
+    .catch(error => {
+        console.error('Error fetching temps:', error);
     });
-    fetch('/api/status').then(r => r.json()).then(data => {
+    
+    fetch('/api/status', {
+        signal: AbortSignal.timeout(3000)  // 3 second timeout
+    })
+    .then(r => r.json())
+    .then(data => {
         document.getElementById('current_target').textContent = data.target?.toFixed(2) ?? '--';
         document.getElementById('current_deviation').textContent = data.deviation?.toFixed(2) ?? '--';
         // Only update input fields if not focused AND not dirty
@@ -220,6 +278,9 @@ function updateDashboard() {
         if (data.should_cool) status += '<span class="badge bg-info">Cooling</span> ';
         if (!data.should_heat && !data.should_cool) status += '<span class="badge bg-success">Stable</span>';
         document.getElementById('status').innerHTML = status;
+    })
+    .catch(error => {
+        console.error('Error fetching status:', error);
     });
 }
 function adjustValue(inputId, delta) {
@@ -272,7 +333,8 @@ document.getElementById('targetForm').onsubmit = function(e) {
 document.getElementById('targetInput').dataset.dirty = '';
 document.getElementById('deviationInput').dataset.dirty = '';
 updateDashboard(); // Load initial state immediately
-setInterval(updateDashboard, 2000); // Refresh every 2 seconds for more responsive updates
+setInterval(updateDashboard, 500); // Ultra-fast refresh every 500ms for high responsiveness
+setInterval(checkWatchdog, 5000); // Check watchdog every 5 seconds
 </script>
 </body>
 </html>

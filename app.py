@@ -5,9 +5,30 @@ import json
 import subprocess
 import atexit
 import threading
+from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
 from sensor_reader import read_sensors, get_offsets, set_offset, get_names, set_name
 from control import TempController
+
+# --- Sensor Data Cache ---
+sensor_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
+CACHE_DURATION = 0.5  # Cache sensor reads for 0.5 seconds for ultra-fast responses
+watchdog_timestamp = time.time()  # Global watchdog timestamp
+
+def get_cached_sensors():
+    """Get sensor data from cache or read fresh if cache expired"""
+    global watchdog_timestamp
+    watchdog_timestamp = time.time()  # Update watchdog on every sensor access
+    
+    with sensor_cache['lock']:
+        now = time.time()
+        if (sensor_cache['data'] is None or 
+            sensor_cache['timestamp'] is None or 
+            (now - sensor_cache['timestamp']) > CACHE_DURATION):
+            # Cache expired or empty, read fresh data
+            sensor_cache['data'] = read_sensors()
+            sensor_cache['timestamp'] = now
+        return sensor_cache['data']
 
 # --- GPIO Setup ---
 try:
@@ -107,7 +128,7 @@ def control_loop():
     while True:
         try:
             if control_enabled:
-                sensors = read_sensors()
+                sensors = get_cached_sensors()  # Use cached data for speed
                 room_temp = None
                 safety_temp = None
                 
@@ -129,13 +150,27 @@ def control_loop():
         except Exception as e:
             print(f"Error in control loop: {e}")
         
-        time.sleep(5)  # Check every 5 seconds
+        time.sleep(1)  # Check every 1 second for faster response
 
 # Start control loop in background thread
 control_thread = threading.Thread(target=control_loop, daemon=True)
 control_thread.start()
 
 # --- API Endpoints ---
+@app.route('/api/watchdog', methods=['GET'])
+def api_watchdog():
+    """Watchdog endpoint to check if backend is responsive"""
+    global watchdog_timestamp
+    current_time = time.time()
+    time_since_update = current_time - watchdog_timestamp
+    is_healthy = time_since_update < 10  # Considered unhealthy if no updates for 10 seconds
+    return jsonify({
+        'healthy': is_healthy,
+        'last_update': watchdog_timestamp,
+        'time_since_update': time_since_update,
+        'timestamp': current_time
+    }), 200
+
 @app.route('/api/light', methods=['POST'])
 def api_light():
     global light_on
@@ -197,7 +232,7 @@ def api_set_offset():
 
 @app.route('/api/temps')
 def get_temps():
-    sensors = read_sensors()
+    sensors = get_cached_sensors()  # Use cache for instant response
     # Convert list to dictionary for backwards compatibility
     temps = {}
     for sensor in sensors:
@@ -206,7 +241,7 @@ def get_temps():
 
 @app.route('/api/temps_named')
 def get_temps_named():
-    sensors = read_sensors()
+    sensors = get_cached_sensors()  # Use cache for instant response
     # Return temperatures organized by sensor name
     temps_by_name = {}
     for sensor in sensors:
@@ -242,7 +277,7 @@ def set_control():
 
 @app.route('/api/status')
 def get_status():
-    sensors = read_sensors()
+    sensors = get_cached_sensors()  # Use cache for instant response
     room_temp = None
     safety_temp = None
     for sensor in sensors:

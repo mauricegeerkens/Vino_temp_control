@@ -38,7 +38,9 @@
 <script src="/static/chart.js"></script>
 <script src="/static/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
-fetch('/api/history')
+fetch('/api/history', {
+  signal: AbortSignal.timeout(5000)  // 5 second timeout for larger data
+})
   .then(res => res.json())
   .then(data => {
     // Define consistent colors for known sensors
@@ -101,6 +103,10 @@ fetch('/api/history')
         }
       }
     });
+  })
+  .catch(error => {
+    console.error('Error loading history data:', error);
+    document.querySelector('.card').innerHTML = '<div class="alert alert-danger">Failed to load history data. Please refresh the page.</div>';
   });
 </script>
 <script src="/static/bootstrap.bundle.min.js"></script>
