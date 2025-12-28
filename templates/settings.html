@@ -20,6 +20,30 @@
         <button id="shutdownBtn" class="btn btn-danger">Afsluiten</button>
     </div>
     <a href="/" class="btn btn-outline-light mb-4">Terug naar hoofdpagina</a>
+    
+    <div class="alert alert-info">
+        <strong>Sensor configuratie:</strong> Wijs de sensor ID's toe aan hun rollen hieronder. 
+        De Room sensor regelt de temperatuur, de Safety sensor voorkomt oververhitting.
+    </div>
+    
+    <div class="card bg-dark text-light mb-4 border-secondary">
+        <div class="card-header"><h5>Sensor toewijzingen</h5></div>
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Room Sensor ID:</label>
+                    <input type="text" class="form-control" id="roomSensorId" placeholder="28-xxxxxxxxxxxx">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Safety Sensor ID:</label>
+                    <input type="text" class="form-control" id="safetySensorId" placeholder="28-xxxxxxxxxxxx">
+                </div>
+            </div>
+            <button class="btn btn-success" onclick="saveSensorAssignments()">Toewijzingen opslaan</button>
+            <div id="assignmentStatus" class="mt-2"></div>
+        </div>
+    </div>
+    
     <div id="sensor-list"></div>
 </div>
 <script src="/static/bootstrap.bundle.min.js"></script>
@@ -31,6 +55,45 @@ document.getElementById('shutdownBtn').onclick = function() {
         });
     }
 };
+
+function loadSensorAssignments() {
+    fetch('/api/control').then(r => r.json()).then(data => {
+        // Get current assignments from settings
+        const roomId = data.room_sensor_id || '';
+        const safetyId = data.safety_sensor_id || '';
+        document.getElementById('roomSensorId').value = roomId;
+        document.getElementById('safetySensorId').value = safetyId;
+    }).catch(error => {
+        console.error('Error loading sensor assignments:', error);
+    });
+}
+
+function saveSensorAssignments() {
+    const roomId = document.getElementById('roomSensorId').value.trim();
+    const safetyId = document.getElementById('safetySensorId').value.trim();
+    
+    if (!roomId || !safetyId) {
+        document.getElementById('assignmentStatus').innerHTML = '<div class="alert alert-danger">Beide sensor ID\'s zijn verplicht</div>';
+        return;
+    }
+    
+    fetch('/api/sensor_assignments', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            room_sensor_id: roomId,
+            safety_sensor_id: safetyId
+        })
+    }).then(r => r.json()).then(data => {
+        document.getElementById('assignmentStatus').innerHTML = '<div class="alert alert-success">Toewijzingen opgeslagen! Herladen...</div>';
+        setTimeout(() => {
+            location.reload();
+        }, 1500);
+    }).catch(error => {
+        document.getElementById('assignmentStatus').innerHTML = '<div class="alert alert-danger">Fout bij opslaan: ' + error + '</div>';
+    });
+}
+
 function loadSensors() {
     fetch('/api/temps', {
         signal: AbortSignal.timeout(30000)
@@ -38,30 +101,36 @@ function loadSensors() {
         fetch('/api/offsets', {
             signal: AbortSignal.timeout(30000)
         }).then(r => r.json()).then(offsets => {
-            fetch('/api/names', {
-                signal: AbortSignal.timeout(30000)
-            }).then(r => r.json()).then(names => {
-                let html = '<table class="table table-dark table-bordered"><thead><tr><th>Sensor ID</th><th>Name</th><th>Temperature (°C)</th><th>Offset</th><th>Set Offset</th><th>Set Name</th></tr></thead><tbody>';
+            fetch('/api/control').then(r => r.json()).then(settings => {
+                const roomId = settings.room_sensor_id || '';
+                const safetyId = settings.safety_sensor_id || '';
+                const sensorNames = settings.sensor_names || {};
+                
+                let html = '<h5 class="mb-3">Alle sensors</h5>';
+                html += '<table class="table table-dark table-bordered"><thead><tr><th>Sensor ID</th><th>Rol</th><th>Naam</th><th>Temperatuur (°C)</th><th>Offset</th><th>Acties</th></tr></thead><tbody>';
                 Object.keys(temps).forEach(sensor_id => {
+                    let role = '';
+                    if (sensor_id === roomId) role = '<span class="badge bg-primary">Room</span>';
+                    if (sensor_id === safetyId) role = '<span class="badge bg-warning">Safety</span>';
+                    
+                    const sensorName = sensorNames[sensor_id] || '';
+                    
                     html += `<tr>
-                        <td>${sensor_id}</td>
-                        <td id="name-${sensor_id}">${names[sensor_id] ?? ''}</td>
+                        <td><code>${sensor_id}</code></td>
+                        <td>${role}</td>
+                        <td id="name-${sensor_id}">${sensorName}</td>
                         <td>${temps[sensor_id]?.toFixed(2) ?? '--'}</td>
                         <td id="offset-${sensor_id}">${offsets[sensor_id] ?? 0}</td>
                         <td>
-                            <input type="number" step="0.01" class="form-control d-inline w-50" id="input-${sensor_id}" value="${offsets[sensor_id] ?? 0}">
-                            <button class="btn btn-sm btn-primary ms-2" onclick="setOffset('${sensor_id}')">Save</button>
-                        </td>
-                        <td>
-                            <input type="text" class="form-control d-inline w-50" id="nameinput-${sensor_id}" value="${names[sensor_id] ?? ''}">
-                            <button class="btn btn-sm btn-success ms-2" onclick="setName('${sensor_id}')">Save</button>
+                            <input type="text" placeholder="Naam" class="form-control form-control-sm d-inline" style="width:120px" id="nameinput-${sensor_id}" value="${sensorName}">
+                            <button class="btn btn-sm btn-success ms-1" onclick="setName('${sensor_id}')">Naam</button>
+                            <input type="number" step="0.01" class="form-control form-control-sm d-inline ms-2" style="width:80px" id="input-${sensor_id}" value="${offsets[sensor_id] ?? 0}">
+                            <button class="btn btn-sm btn-primary ms-1" onclick="setOffset('${sensor_id}')">Offset</button>
                         </td>
                     </tr>`;
                 });
                 html += '</tbody></table>';
                 document.getElementById('sensor-list').innerHTML = html;
-            }).catch(error => {
-                console.error('Error loading names:', error);
             });
         }).catch(error => {
             console.error('Error loading offsets:', error);
@@ -71,6 +140,18 @@ function loadSensors() {
         document.getElementById('sensor-list').innerHTML = '<div class="alert alert-danger">Failed to load sensor data. Please refresh the page.</div>';
     });
 }
+
+function setName(sensor_id) {
+    const val = document.getElementById('nameinput-' + sensor_id).value;
+    fetch('/api/sensor_name', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({sensor_id: sensor_id, name: val})
+    }).then(() => {
+        document.getElementById('name-' + sensor_id).textContent = val;
+    });
+}
+
 function setOffset(sensor_id) {
     const val = document.getElementById('input-' + sensor_id).value;
     fetch('/api/offsets', {
@@ -81,16 +162,8 @@ function setOffset(sensor_id) {
         document.getElementById('offset-' + sensor_id).textContent = val;
     });
 }
-function setName(sensor_id) {
-    const val = document.getElementById('nameinput-' + sensor_id).value;
-    fetch('/api/names', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({sensor_id: sensor_id, name: val})
-    }).then(() => {
-        document.getElementById('name-' + sensor_id).textContent = val;
-    });
-}
+
+loadSensorAssignments();
 loadSensors();
 </script>
 </body>

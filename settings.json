@@ -1,6 +1,14 @@
 {
   "target": 12.0,
   "deviation": 0.5,
-  "room_sensor_id": "28-mock001",
-  "safety_sensor_id": "28-mock002"
+  "room_sensor_id": "28-000000b2de98",
+  "safety_sensor_id": "",
+  "safety_off_temp": 28.0,
+  "safety_on_temp": 25.0,
+  "sensor_names": {
+    "28-000000b2de98": "Room",
+    "28-000000be48b4": "Johanniter",
+    "28-000000be61bd": "Solaris",
+    "28-000000bff7ad": "Souvignier gris"
+  }
 }

@@ -1,5 +1,56 @@
 # Vino Temperature Control - Release Notes
 
+## Version 1.7 - December 2025
+
+### Enhanced Sensor Management & Configurable Safety
+
+**Added Features**:
+
+#### 🏷️ Sensor Names for Display
+- Restored sensor naming capability for better UI/UX
+- Names stored in `settings.json` under `sensor_names`
+- Control loop still uses direct ID lookup (fast)
+- Display shows friendly names (Johanniter, Solaris, Souvignier gris, etc.)
+- `/api/temps_named` endpoint returns temps by name
+- Settings page allows editing sensor names
+
+#### 🛡️ Flexible Safety Configuration
+- Safety sensor is now **optional** (set `safety_sensor_id: ""` to disable)
+- Configurable safety temperatures in settings.json:
+  - `safety_off_temp`: Temperature to shut off heating (default 28°C)
+  - `safety_on_temp`: Temperature to resume heating (default 25°C)
+- Control loop handles missing safety sensor gracefully
+- Only reads connected sensors (optimized performance)
+
+#### 🎯 Updated Settings Structure
+```json
+{
+  "room_sensor_id": "28-000000b2de98",
+  "safety_sensor_id": "",  // Optional - leave empty if not connected
+  "safety_off_temp": 28.0,
+  "safety_on_temp": 25.0,
+  "sensor_names": {
+    "28-000000b2de98": "Room",
+    "28-000000be48b4": "Johanniter",
+    "28-000000be61bd": "Solaris",
+    "28-000000bff7ad": "Souvignier gris"
+  }
+}
+```
+
+#### 🔧 API Enhancements
+- `GET /api/control` - Now includes sensor names
+- `POST /api/sensor_name` - Update individual sensor names
+- `GET /api/temps_named` - Get temperatures by friendly names
+
+**Benefits**:
+- ✅ Better UI - see sensor names instead of IDs
+- ✅ Flexible safety - optional overheating protection
+- ✅ Still fast - control loop optimized with direct ID lookup
+- ✅ Easy configuration - edit names via web interface or JSON
+
+---
+
 ## Version 1.6 - December 2025
 
 ### Performance Optimization & Simplified Architecture

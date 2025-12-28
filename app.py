@@ -32,10 +32,16 @@ def get_control_sensors():
         if (control_cache['data'] is None or 
             control_cache['timestamp'] is None or 
             (now - control_cache['timestamp']) > CONTROL_CACHE_DURATION):
-            # Read only the 2 sensors needed for control using IDs from settings
+            # Read only the sensors needed for control using IDs from settings
             room_id = settings.get('room_sensor_id', '28-mock001')
-            safety_id = settings.get('safety_sensor_id', '28-mock002')
-            control_cache['data'] = read_sensors_by_id([room_id, safety_id])
+            safety_id = settings.get('safety_sensor_id', '')
+            
+            # Build list of sensors to read (only read if IDs are configured)
+            sensor_ids = [room_id] if room_id else []
+            if safety_id:
+                sensor_ids.append(safety_id)
+            
+            control_cache['data'] = read_sensors_by_id(sensor_ids) if sensor_ids else []
             control_cache['timestamp'] = now
         return control_cache['data']
 
@@ -142,8 +148,10 @@ def save_settings(settings):
 settings = load_settings()
 target = settings.get("target", 12.0)
 deviation = settings.get("deviation", 0.5)
+safety_off_temp = settings.get("safety_off_temp", 28.0)
+safety_on_temp = settings.get("safety_on_temp", 25.0)
 SAFETY_SENSOR_NAME = "SafetySensor"  # Change this to your safety sensor's name
-controller = TempController(target=target, deviation=deviation, safety_sensor_name=SAFETY_SENSOR_NAME, safety_off=28.0, safety_on=25.0)
+controller = TempController(target=target, deviation=deviation, safety_sensor_name=SAFETY_SENSOR_NAME, safety_off=safety_off_temp, safety_on=safety_on_temp)
 
 # --- Control Loop ---
 def control_loop():
@@ -153,20 +161,30 @@ def control_loop():
         try:
             if control_enabled:
                 # Only read the 2 sensors needed for control - fast!
-                sensors = get_control_sensors()
-                room_temp = None
-                safety_temp = None
-                
                 # Get sensor IDs from settings
                 room_id = settings.get('room_sensor_id', '28-mock001')
-                safety_id = settings.get('safety_sensor_id', '28-mock002')
+                safety_id = settings.get('safety_sensor_id', '')
+                
+                # Build list of sensors to read (only read if IDs are configured)
+                sensor_ids = [room_id] if room_id else []
+                if safety_id:
+                    sensor_ids.append(safety_id)
+                
+                if not sensor_ids:
+                    # No sensors configured, skip this iteration
+                    time.sleep(2)
+                    continue
+                
+                sensors = read_sensors_by_id(sensor_ids)
+                room_temp = None
+                safety_temp = None
                 
                 for sensor in sensors:
                     sensor_id = sensor.get('id', '')
                     temp = sensor.get('temperature', None)
                     if sensor_id == room_id:
                         room_temp = temp
-                    elif sensor_id == safety_id:
+                    elif safety_id and sensor_id == safety_id:
                         safety_temp = temp
                 
                 # Update the relays based on current temperature
@@ -272,6 +290,25 @@ def get_temps():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/temps_named')
+def get_temps_named():
+    """Return temperatures with names from settings"""
+    try:
+        sensors = get_all_sensors()
+        sensor_names = settings.get('sensor_names', {})
+        temps_by_name = {}
+        for sensor in sensors:
+            sensor_id = sensor['id']
+            name = sensor_names.get(sensor_id, '')
+            if name:
+                temps_by_name[name] = sensor['temperature']
+        return jsonify(temps_by_name)
+    except Exception as e:
+        print(f"Error in /api/temps_named: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/control', methods=['POST'])
 def set_control():
     data = request.json
@@ -297,6 +334,57 @@ def set_control():
         save_settings(settings)
     return jsonify({'target': controller.target, 'deviation': controller.deviation}), 200
 
+@app.route('/api/control', methods=['GET'])
+def get_control():
+    """Return current control settings including sensor assignments"""
+    return jsonify({
+        'target': controller.target,
+        'deviation': controller.deviation,
+        'room_sensor_id': settings.get('room_sensor_id', '28-mock001'),
+        'safety_sensor_id': settings.get('safety_sensor_id', '28-mock002'),
+        'sensor_names': settings.get('sensor_names', {})
+    }), 200
+
+@app.route('/api/sensor_assignments', methods=['POST'])
+def set_sensor_assignments():
+    """Update which sensors are assigned to room and safety roles"""
+    data = request.json
+    room_id = data.get('room_sensor_id')
+    safety_id = data.get('safety_sensor_id')
+    
+    if room_id:
+        settings['room_sensor_id'] = room_id
+    if safety_id:
+        settings['safety_sensor_id'] = safety_id
+    
+    save_settings(settings)
+    
+    # Clear caches to force re-read with new sensor assignments
+    with control_cache['lock']:
+        control_cache['data'] = None
+        control_cache['timestamp'] = None
+    
+    return jsonify({
+        'room_sensor_id': settings.get('room_sensor_id'),
+        'safety_sensor_id': settings.get('safety_sensor_id')
+    }), 200
+
+@app.route('/api/sensor_name', methods=['POST'])
+def set_sensor_name():
+    """Update a sensor's display name in settings"""
+    data = request.json
+    sensor_id = data.get('sensor_id')
+    name = data.get('name', '')
+    
+    if sensor_id:
+        if 'sensor_names' not in settings:
+            settings['sensor_names'] = {}
+        settings['sensor_names'][sensor_id] = name
+        save_settings(settings)
+        return jsonify({'sensor_id': sensor_id, 'name': name}), 200
+    
+    return jsonify({'error': 'Missing sensor_id'}), 400
+
 @app.route('/api/status')
 def get_status():
     try:
@@ -307,14 +395,14 @@ def get_status():
         
         # Get sensor IDs from settings
         room_id = settings.get('room_sensor_id', '28-mock001')
-        safety_id = settings.get('safety_sensor_id', '28-mock002')
+        safety_id = settings.get('safety_sensor_id', '')
         
         for sensor in sensors:
             sensor_id = sensor.get('id', '')
             temp = sensor.get('temperature', None)
             if sensor_id == room_id:
                 room_temp = temp
-            elif sensor_id == safety_id:
+            elif safety_id and sensor_id == safety_id:
                 safety_temp = temp
         
         # Return ACTUAL controller state, not recalculated values
