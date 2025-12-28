@@ -33,7 +33,70 @@ def save_names(names):
     with open(NAME_FILE, 'w') as f:
         json.dump(names, f)
 
+def read_single_sensor(sensor_id, base_dir='/sys/bus/w1/devices/'):
+    """Read a single sensor by ID for fast critical reads"""
+    try:
+        folder = os.path.join(base_dir, sensor_id)
+        if not os.path.exists(folder):
+            return None
+            
+        with open(folder + '/w1_slave', 'r') as f:
+            lines = f.readlines()
+            if lines[0].strip()[-3:] == 'YES':
+                equals_pos = lines[1].find('t=')
+                if equals_pos != -1:
+                    temp_c = float(lines[1][equals_pos+2:]) / 1000.0
+                    # Apply offset if available
+                    offsets = load_offsets()
+                    temp_c += offsets.get(sensor_id, 0.0)
+                    return temp_c
+    except Exception as e:
+        print(f"Error reading sensor {sensor_id}: {e}")
+    return None
+
+def read_sensors_by_name(sensor_names):
+    """Read specific sensors by name (e.g., ['Room', 'SafetySensor']) - faster than reading all"""
+    try:
+        base_dir = '/sys/bus/w1/devices/'
+        
+        # Check if we're on a Raspberry Pi with actual sensors
+        if not os.path.exists(base_dir):
+            # Return mock data for development/testing
+            import random
+            result = []
+            names_db = load_names()
+            for mock_id, mock_name in [('28-mock001', 'Room'), ('28-mock002', 'SafetySensor')]:
+                if mock_name in sensor_names:
+                    result.append({
+                        'id': mock_id,
+                        'name': mock_name,
+                        'temperature': round(12.0 + random.uniform(-0.5, 0.5), 1) if mock_name == 'Room' else round(20.0 + random.uniform(-1.0, 1.0), 1)
+                    })
+            return result
+        
+        # Find which sensor IDs correspond to the requested names
+        names_db = load_names()
+        name_to_id = {name: sid for sid, name in names_db.items() if name in sensor_names}
+        
+        sensors = []
+        for name, sensor_id in name_to_id.items():
+            temp = read_single_sensor(sensor_id, base_dir)
+            if temp is not None:
+                sensors.append({
+                    'id': sensor_id,
+                    'name': name,
+                    'temperature': temp
+                })
+        
+        return sensors
+    except Exception as e:
+        print(f"Error in read_sensors_by_name: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
 def read_sensors():
+    """Read all sensors - use sparingly, prefer read_sensors_by_name for specific sensors"""
     try:
         base_dir = '/sys/bus/w1/devices/'
         

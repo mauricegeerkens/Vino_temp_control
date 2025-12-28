@@ -57,12 +57,20 @@ class TempController:
 
     def update_relays(self, current_temp, safety_temp=None):
         # Only one system active at a time, with safety sensor
-        if self.should_heat(current_temp, safety_temp):
+        should_heat = self.should_heat(current_temp, safety_temp)
+        should_cool = self.should_cool(current_temp)
+        
+        # Debug logging
+        print(f"Control: temp={current_temp}, target={self.target}, dev={self.deviation}, heat={should_heat}, cool={should_cool}, safety={safety_temp}, blocked={self.heating_blocked}")
+        
+        if should_heat:
             GPIO.output(HEAT_PIN, GPIO.HIGH)
             GPIO.output(COOL_PIN, GPIO.LOW)
-        elif self.should_cool(current_temp):
+            print(f"HEATING ON (GPIO {HEAT_PIN} = HIGH)")
+        elif should_cool:
             GPIO.output(HEAT_PIN, GPIO.LOW)
             GPIO.output(COOL_PIN, GPIO.HIGH)
+            print(f"COOLING ON (GPIO {COOL_PIN} = HIGH)")
         else:
             GPIO.output(HEAT_PIN, GPIO.LOW)
             GPIO.output(COOL_PIN, GPIO.LOW)

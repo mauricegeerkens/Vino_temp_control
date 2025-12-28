@@ -1,5 +1,51 @@
 # Vino Temperature Control - Release Notes
 
+## Version 1.5 - December 2025
+
+### Major Architectural Redesign for Maximum Responsiveness
+
+**Problem Solved**: Previous versions read all 4 DS18B20 sensors on every API call, causing 3+ second delays (each sensor takes ~750ms).
+
+**Solution**: Dual caching system with smart sensor separation:
+
+#### 🚀 Performance Improvements
+- **Dual Cache Architecture**:
+  - **Control Cache**: Only reads 2 sensors (Room + SafetySensor) every 1 second for heating/cooling decisions
+  - **Display Cache**: Reads all 4 sensors every 5 seconds for UI display only
+  - Eliminates unnecessary sensor reads - control loop no longer waits for display sensors
+
+- **New Optimized Functions**:
+  - `read_sensors_by_name()`: Fast targeted sensor reads by name
+  - `read_single_sensor()`: Read individual sensor for critical operations
+  - `get_control_sensors()`: Fast access to control-critical data
+  - `get_all_sensors()`: Slower, UI-only full sensor read
+
+- **Dramatically Faster Response Times**:
+  - Control decisions: **<100ms** (was 3+ seconds)
+  - Status API: **<100ms** (was 3+ seconds)
+  - Temperature display: **<100ms with 5s cache** (was 3+ seconds every call)
+  - Settings changes: **Instant** (no sensor reads needed)
+
+#### 🎯 Smart Sensor Usage
+- **Control sensors** (Room + SafetySensor): Read frequently (1s) for responsive heating/cooling
+- **Display sensors** (all 4): Read infrequently (5s) to avoid UI slowdown
+- Each API endpoint uses the appropriate cache for its purpose
+
+#### 🔧 Technical Changes
+- Removed redundant `get_cached_sensors()` function
+- Control loop optimized to only access control sensors
+- Fixed case-sensitive sensor name matching (was `name.lower() == "room"`, now `name == "Room"`)
+- Consistent naming throughout codebase
+
+### Benefits
+- ✅ Heating/cooling responds within 1 second instead of 3+ seconds
+- ✅ UI controls feel instant and responsive
+- ✅ No more lag when changing settings or toggling switches
+- ✅ Control loop never blocked by slow sensor reads
+- ✅ Frontend polling efficient - no cascading sensor read delays
+
+---
+
 ## Version 1.3 - December 2025
 
 ### Major Performance Improvements

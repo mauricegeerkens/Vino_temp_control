@@ -8,29 +8,49 @@ import threading
 import os
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
-from sensor_reader import read_sensors, get_offsets, set_offset, get_names, set_name
+from sensor_reader import read_sensors, read_sensors_by_name, get_offsets, set_offset, get_names, set_name
 from control import TempController
 
-# --- Sensor Data Cache ---
-sensor_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
-CACHE_DURATION = 2.0  # Cache sensor reads for 2 seconds (DS18B20 sensors are slow)
+# --- Dual Sensor Cache System ---
+# Control cache: Only Room + SafetySensor, read frequently (every 1s) for fast control
+control_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
+CONTROL_CACHE_DURATION = 1.0  # 1 second for control sensors
+
+# Display cache: All sensors for UI, read less frequently (every 5s) to avoid slowdown
+display_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
+DISPLAY_CACHE_DURATION = 5.0  # 5 seconds for all sensors (reduces UI load)
+
 watchdog_timestamp = time.time()  # Global watchdog timestamp
 
-def get_cached_sensors():
-    """Get sensor data from cache or read fresh if cache expired"""
+def get_control_sensors():
+    """Get Room + SafetySensor only - fast, for control loop"""
     global watchdog_timestamp
-    watchdog_timestamp = time.time()  # Update watchdog on every sensor access
+    watchdog_timestamp = time.time()
     
-    with sensor_cache['lock']:
+    with control_cache['lock']:
         now = time.time()
-        if (sensor_cache['data'] is None or 
-            sensor_cache['timestamp'] is None or 
-            (now - sensor_cache['timestamp']) > CACHE_DURATION):
-            # Cache expired or empty, read fresh data
-            sensor_cache['data'] = read_sensors()
-            sensor_cache['timestamp'] = now
-            watchdog_timestamp = time.time()  # Update again after slow sensor read
-        return sensor_cache['data']
+        if (control_cache['data'] is None or 
+            control_cache['timestamp'] is None or 
+            (now - control_cache['timestamp']) > CONTROL_CACHE_DURATION):
+            # Read only the 2 sensors needed for control
+            control_cache['data'] = read_sensors_by_name(['Room', 'SafetySensor'])
+            control_cache['timestamp'] = now
+        return control_cache['data']
+
+def get_all_sensors():
+    """Get all sensors - slower, for UI display only"""
+    global watchdog_timestamp
+    watchdog_timestamp = time.time()
+    
+    with display_cache['lock']:
+        now = time.time()
+        if (display_cache['data'] is None or 
+            display_cache['timestamp'] is None or 
+            (now - display_cache['timestamp']) > DISPLAY_CACHE_DURATION):
+            # Read all sensors for display
+            display_cache['data'] = read_sensors()
+            display_cache['timestamp'] = now
+        return display_cache['data']
 
 # --- GPIO Setup ---
 try:
@@ -130,16 +150,17 @@ def control_loop():
     while True:
         try:
             if control_enabled:
-                sensors = get_cached_sensors()  # Use cached data for speed
+                # Only read the 2 sensors needed for control - fast!
+                sensors = get_control_sensors()
                 room_temp = None
                 safety_temp = None
                 
                 for sensor in sensors:
                     name = sensor.get('name', "")
                     temp = sensor.get('temperature', None)
-                    if name.lower() == "room":
+                    if name == "Room":
                         room_temp = temp
-                    if name == controller.safety_sensor_name:
+                    elif name == "SafetySensor":
                         safety_temp = temp
                 
                 # Update the relays based on current temperature
@@ -247,7 +268,8 @@ def api_set_offset():
 @app.route('/api/temps')
 def get_temps():
     try:
-        sensors = get_cached_sensors()  # Use cache for instant response
+        # Use display cache - all sensors, updated every 5 seconds
+        sensors = get_all_sensors()
         # Convert list to dictionary for backwards compatibility
         temps = {}
         for sensor in sensors:
@@ -261,7 +283,8 @@ def get_temps():
 
 @app.route('/api/temps_named')
 def get_temps_named():
-    sensors = get_cached_sensors()  # Use cache for instant response
+    # Use display cache - all sensors, updated every 5 seconds
+    sensors = get_all_sensors()
     # Return temperatures organized by sensor name
     temps_by_name = {}
     for sensor in sensors:
@@ -298,15 +321,16 @@ def set_control():
 @app.route('/api/status')
 def get_status():
     try:
-        sensors = get_cached_sensors()  # Use cache for instant response
+        # Use control cache - only Room + SafetySensor, updated every 1 second
+        sensors = get_control_sensors()
         room_temp = None
         safety_temp = None
         for sensor in sensors:
             name = sensor.get('name', "")
             temp = sensor.get('temperature', None)
-            if name.lower() == "room":
+            if name == "Room":
                 room_temp = temp
-            if name == controller.safety_sensor_name:
+            elif name == "SafetySensor":
                 safety_temp = temp
         status = {
             'should_heat': controller.should_heat(room_temp, safety_temp) if control_enabled else False,
