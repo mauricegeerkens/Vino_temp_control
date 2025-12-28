@@ -266,6 +266,9 @@ document.getElementById('targetForm').onsubmit = function(e) {
 };
 
 // Initialize on page load
+// Clear dirty flags on fresh page load
+document.getElementById('targetInput').dataset.dirty = '';
+document.getElementById('deviationInput').dataset.dirty = '';
 updateDashboard(); // Load initial state immediately
 setInterval(updateDashboard, 5000); // Then refresh every 5 seconds
 </script>

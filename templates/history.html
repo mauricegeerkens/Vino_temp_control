@@ -41,31 +41,64 @@
 fetch('/api/history')
   .then(res => res.json())
   .then(data => {
-    // Group by sensor name
+    // Define consistent colors for known sensors
+    const colorMap = {
+      'Room': '#FF6384',
+      'Johanniter': '#36A2EB',
+      'Solaris': '#FFCE56',
+      'Souvignier gris': '#4BC0C0'
+    };
+    
+    // Only include the 4 known sensors
+    const knownSensors = ['Room', 'Johanniter', 'Solaris', 'Souvignier gris'];
+    
+    // Group by sensor name - only include known sensors
     const sensors = {};
     data.forEach(d => {
-      if (!sensors[d.name]) sensors[d.name] = [];
-      sensors[d.name].push({
-        x: new Date(d.timestamp * 1000),
-        y: d.temperature
-      });
+      if (d.name && knownSensors.includes(d.name)) {
+        if (!sensors[d.name]) sensors[d.name] = [];
+        sensors[d.name].push({
+          x: new Date(d.timestamp * 1000),
+          y: d.temperature
+        });
+      }
     });
+    
     const datasets = Object.keys(sensors).map(name => ({
-      label: name || 'Unknown',
+      label: name,
       data: sensors[name],
       fill: false,
-      borderColor: '#' + Math.floor(Math.random()*16777215).toString(16),
-      tension: 0.1
+      borderColor: colorMap[name],
+      tension: 0.1,
+      borderWidth: 2
     }));
+    
     new Chart(document.getElementById('tempHistogram').getContext('2d'), {
       type: 'line',
       data: { datasets },
       options: {
+        responsive: true,
+        maintainAspectRatio: true,
         scales: {
-          x: { type: 'time', time: { unit: 'day' }, title: { display: true, text: 'Date' } },
-          y: { title: { display: true, text: 'Temperature (°C)' } }
+          x: { 
+            type: 'time', 
+            time: { unit: 'day' }, 
+            title: { display: true, text: 'Datum', color: '#fff' },
+            ticks: { color: '#fff' },
+            grid: { color: 'rgba(255,255,255,0.1)' }
+          },
+          y: { 
+            title: { display: true, text: 'Temperatuur (°C)', color: '#fff' },
+            ticks: { color: '#fff' },
+            grid: { color: 'rgba(255,255,255,0.1)' }
+          }
         },
-        plugins: { legend: { display: true } }
+        plugins: { 
+          legend: { 
+            display: true,
+            labels: { color: '#fff' }
+          }
+        }
       }
     });
   });
