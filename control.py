@@ -5,7 +5,7 @@
 try:
     import RPi.GPIO as GPIO
     GPIO.setwarnings(False)  # Disable GPIO warnings
-except ImportError:
+except (ImportError, RuntimeError):
     class MockGPIO:
         BCM = OUT = HIGH = LOW = None
         def setmode(self, *a, **kw): pass

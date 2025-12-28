@@ -5,6 +5,7 @@ import json
 import subprocess
 import atexit
 import threading
+import os
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
 from sensor_reader import read_sensors, get_offsets, set_offset, get_names, set_name
@@ -12,7 +13,7 @@ from control import TempController
 
 # --- Sensor Data Cache ---
 sensor_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
-CACHE_DURATION = 0.5  # Cache sensor reads for 0.5 seconds for ultra-fast responses
+CACHE_DURATION = 2.0  # Cache sensor reads for 2 seconds (DS18B20 sensors are slow)
 watchdog_timestamp = time.time()  # Global watchdog timestamp
 
 def get_cached_sensors():
@@ -28,13 +29,14 @@ def get_cached_sensors():
             # Cache expired or empty, read fresh data
             sensor_cache['data'] = read_sensors()
             sensor_cache['timestamp'] = now
+            watchdog_timestamp = time.time()  # Update again after slow sensor read
         return sensor_cache['data']
 
 # --- GPIO Setup ---
 try:
     import RPi.GPIO as GPIO
     GPIO.setwarnings(False)  # Disable warnings about channels in use
-except ImportError:
+except (ImportError, RuntimeError):
     class MockGPIO:
         BCM = OUT = HIGH = LOW = None
         def setmode(self, *a, **kw): pass
@@ -163,7 +165,7 @@ def api_watchdog():
     global watchdog_timestamp
     current_time = time.time()
     time_since_update = current_time - watchdog_timestamp
-    is_healthy = time_since_update < 10  # Considered unhealthy if no updates for 10 seconds
+    is_healthy = time_since_update < 15  # Considered unhealthy if no updates for 15 seconds (increased for slow sensor reads)
     return jsonify({
         'healthy': is_healthy,
         'last_update': watchdog_timestamp,
@@ -204,7 +206,13 @@ def api_control_enable():
 
 @app.route('/api/names', methods=['GET'])
 def api_get_names():
-    return jsonify(get_names())
+    try:
+        return jsonify(get_names())
+    except Exception as e:
+        print(f"Error in /api/names GET: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({}), 200  # Return empty dict instead of failing
 
 @app.route('/api/names', methods=['POST'])
 def api_set_name():
@@ -218,7 +226,13 @@ def api_set_name():
 
 @app.route('/api/offsets', methods=['GET'])
 def api_get_offsets():
-    return jsonify(get_offsets())
+    try:
+        return jsonify(get_offsets())
+    except Exception as e:
+        print(f"Error in /api/offsets GET: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({}), 200  # Return empty dict instead of failing
 
 @app.route('/api/offsets', methods=['POST'])
 def api_set_offset():
@@ -232,12 +246,18 @@ def api_set_offset():
 
 @app.route('/api/temps')
 def get_temps():
-    sensors = get_cached_sensors()  # Use cache for instant response
-    # Convert list to dictionary for backwards compatibility
-    temps = {}
-    for sensor in sensors:
-        temps[sensor['id']] = sensor['temperature']
-    return jsonify(temps)
+    try:
+        sensors = get_cached_sensors()  # Use cache for instant response
+        # Convert list to dictionary for backwards compatibility
+        temps = {}
+        for sensor in sensors:
+            temps[sensor['id']] = sensor['temperature']
+        return jsonify(temps)
+    except Exception as e:
+        print(f"Error in /api/temps: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/temps_named')
 def get_temps_named():
@@ -277,28 +297,34 @@ def set_control():
 
 @app.route('/api/status')
 def get_status():
-    sensors = get_cached_sensors()  # Use cache for instant response
-    room_temp = None
-    safety_temp = None
-    for sensor in sensors:
-        name = sensor.get('name', "")
-        temp = sensor.get('temperature', None)
-        if name.lower() == "room":
-            room_temp = temp
-        if name == controller.safety_sensor_name:
-            safety_temp = temp
-    status = {
-        'should_heat': controller.should_heat(room_temp, safety_temp) if control_enabled else False,
-        'should_cool': controller.should_cool(room_temp) if control_enabled else False,
-        'target': controller.target,
-        'deviation': controller.deviation,
-        'room_temp': room_temp,
-        'safety_temp': safety_temp,
-        'heating_blocked': controller.heating_blocked,
-        'control_enabled': control_enabled,
-        'light_on': light_on
-    }
-    return jsonify(status)
+    try:
+        sensors = get_cached_sensors()  # Use cache for instant response
+        room_temp = None
+        safety_temp = None
+        for sensor in sensors:
+            name = sensor.get('name', "")
+            temp = sensor.get('temperature', None)
+            if name.lower() == "room":
+                room_temp = temp
+            if name == controller.safety_sensor_name:
+                safety_temp = temp
+        status = {
+            'should_heat': controller.should_heat(room_temp, safety_temp) if control_enabled else False,
+            'should_cool': controller.should_cool(room_temp) if control_enabled else False,
+            'target': controller.target,
+            'deviation': controller.deviation,
+            'room_temp': room_temp,
+            'safety_temp': safety_temp,
+            'heating_blocked': controller.heating_blocked,
+            'control_enabled': control_enabled,
+            'light_on': light_on
+        }
+        return jsonify(status)
+    except Exception as e:
+        print(f"Error in /api/status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 # --- Page Routes ---
 @app.route('/')
@@ -335,4 +361,6 @@ def settings_page():
     return render_template('settings.html')
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Allow port to be configured via environment variable for development
+    port = int(os.environ.get('FLASK_PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)

@@ -34,38 +34,62 @@ def save_names(names):
         json.dump(names, f)
 
 def read_sensors():
-    base_dir = '/sys/bus/w1/devices/'
-    device_folders = glob.glob(base_dir + '28-*')
-    offsets = load_offsets()
-    temps = {}
-    for folder in device_folders:
-        sensor_id = os.path.basename(folder)
+    try:
+        base_dir = '/sys/bus/w1/devices/'
+        
+        # Check if we're on a Raspberry Pi with actual sensors
+        if not os.path.exists(base_dir):
+            # Return mock data for development/testing
+            import random
+            names = load_names()
+            sensors = [
+                {'id': '28-mock001', 'name': names.get('28-mock001', 'Room'), 'temperature': round(12.0 + random.uniform(-0.5, 0.5), 1)},
+                {'id': '28-mock002', 'name': names.get('28-mock002', 'SafetySensor'), 'temperature': round(20.0 + random.uniform(-1.0, 1.0), 1)},
+            ]
+            return sensors
+        
+        device_folders = glob.glob(base_dir + '28-*')
+        offsets = load_offsets()
+        temps = {}
+        for folder in device_folders:
+            sensor_id = os.path.basename(folder)
+            try:
+                with open(folder + '/w1_slave', 'r') as f:
+                    lines = f.readlines()
+                    if lines[0].strip()[-3:] == 'YES':
+                        equals_pos = lines[1].find('t=')
+                        if equals_pos != -1:
+                            temp_c = float(lines[1][equals_pos+2:]) / 1000.0
+                            # Apply offset if available
+                            temp_c += offsets.get(sensor_id, 0.0)
+                            temps[sensor_id] = temp_c
+            except Exception as e:
+                print(f"Error reading sensor {sensor_id}: {e}")
+                temps[sensor_id] = None
+        
+        # Build sensors list with names
+        names = load_names()
+        sensors = []
+        for sensor_id, temp in temps.items():
+            sensors.append({
+                'id': sensor_id,
+                'name': names.get(sensor_id, ''),
+                'temperature': temp
+            })
+        
+        # Log readings for histogram
         try:
-            with open(folder + '/w1_slave', 'r') as f:
-                lines = f.readlines()
-                if lines[0].strip()[-3:] == 'YES':
-                    equals_pos = lines[1].find('t=')
-                    if equals_pos != -1:
-                        temp_c = float(lines[1][equals_pos+2:]) / 1000.0
-                        # Apply offset if available
-                        temp_c += offsets.get(sensor_id, 0.0)
-                        temps[sensor_id] = temp_c
+            log_temperature_data(sensors)
         except Exception as e:
-            temps[sensor_id] = None
-    
-    # Build sensors list with names
-    names = load_names()
-    sensors = []
-    for sensor_id, temp in temps.items():
-        sensors.append({
-            'id': sensor_id,
-            'name': names.get(sensor_id, ''),
-            'temperature': temp
-        })
-    
-    # Log readings for histogram
-    log_temperature_data(sensors)
-    return sensors
+            print(f"Error logging temperature data: {e}")
+        
+        return sensors
+    except Exception as e:
+        print(f"Critical error in read_sensors: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty list on critical error
+        return []
 
 def log_temperature_data(sensors):
     log_file = 'temperature_log.csv'

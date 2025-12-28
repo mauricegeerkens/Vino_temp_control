@@ -33,13 +33,13 @@ document.getElementById('shutdownBtn').onclick = function() {
 };
 function loadSensors() {
     fetch('/api/temps', {
-        signal: AbortSignal.timeout(3000)
+        signal: AbortSignal.timeout(10000)
     }).then(r => r.json()).then(temps => {
         fetch('/api/offsets', {
-            signal: AbortSignal.timeout(3000)
+            signal: AbortSignal.timeout(10000)
         }).then(r => r.json()).then(offsets => {
             fetch('/api/names', {
-                signal: AbortSignal.timeout(3000)
+                signal: AbortSignal.timeout(10000)
             }).then(r => r.json()).then(names => {
                 let html = '<table class="table table-dark table-bordered"><thead><tr><th>Sensor ID</th><th>Name</th><th>Temperature (°C)</th><th>Offset</th><th>Set Offset</th><th>Set Name</th></tr></thead><tbody>';
                 Object.keys(temps).forEach(sensor_id => {

@@ -147,7 +147,7 @@ const lightSwitchText = document.getElementById('lightSwitchText');
 // Watchdog monitor
 function checkWatchdog() {
     fetch('/api/watchdog', {
-        signal: AbortSignal.timeout(2000)  // 2 second timeout
+        signal: AbortSignal.timeout(10000)  // 10 second timeout for slow sensor reads
     })
     .then(r => r.json())
     .then(data => {
@@ -237,7 +237,7 @@ lightSwitch.onclick = function() {
 };
 function updateDashboard() {
     fetch('/api/temps_named', {
-        signal: AbortSignal.timeout(3000)  // 3 second timeout
+        signal: AbortSignal.timeout(10000)  // 10 second timeout for slow sensor reads
     })
     .then(r => r.json())
     .then(data => {
@@ -251,7 +251,7 @@ function updateDashboard() {
     });
     
     fetch('/api/status', {
-        signal: AbortSignal.timeout(3000)  // 3 second timeout
+        signal: AbortSignal.timeout(10000)  // 10 second timeout for slow sensor reads
     })
     .then(r => r.json())
     .then(data => {
