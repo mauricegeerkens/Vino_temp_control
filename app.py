@@ -60,6 +60,25 @@ def save_control_enabled(enabled):
 
 control_enabled = load_control_enabled()
 
+# --- Light State Persistence ---
+LIGHT_STATE_FILE = "light_state.json"
+
+def load_light_state():
+    try:
+        with open(LIGHT_STATE_FILE, "r") as f:
+            return json.load(f).get("on", False)
+    except Exception:
+        return False
+
+def save_light_state(on):
+    with open(LIGHT_STATE_FILE, "w") as f:
+        json.dump({"on": on}, f)
+
+light_on = load_light_state()
+# Initialize GPIO with saved state
+GPIO.output(LIGHT_PIN, GPIO.HIGH if light_on else GPIO.LOW)
+print(f"Light restored to state: {'ON' if light_on else 'OFF'}")
+
 # --- Settings Persistence ---
 SETTINGS_FILE = "settings.json"
 
@@ -83,13 +102,20 @@ controller = TempController(target=target, deviation=deviation, safety_sensor_na
 # --- API Endpoints ---
 @app.route('/api/light', methods=['POST'])
 def api_light():
+    global light_on
     data = request.json
     on = data.get('on', False)
-    print(f"Light API called: on={on}, setting GPIO to {'HIGH' if on else 'LOW'}")
+    light_on = bool(on)
+    print(f"Light API called: on={light_on}, setting GPIO to {'HIGH' if light_on else 'LOW'}")
     # Direct logic for active-HIGH relay modules
-    GPIO.output(LIGHT_PIN, GPIO.HIGH if on else GPIO.LOW)
+    GPIO.output(LIGHT_PIN, GPIO.HIGH if light_on else GPIO.LOW)
+    save_light_state(light_on)
     print(f"GPIO {LIGHT_PIN} set successfully")
-    return jsonify({'on': on}), 200
+    return jsonify({'on': light_on}), 200
+
+@app.route('/api/light', methods=['GET'])
+def api_get_light():
+    return jsonify({'on': light_on}), 200
 
 @app.route('/api/shutdown', methods=['POST'])
 def api_shutdown():
@@ -198,7 +224,8 @@ def get_status():
         'room_temp': room_temp,
         'safety_temp': safety_temp,
         'heating_blocked': controller.heating_blocked,
-        'control_enabled': control_enabled
+        'control_enabled': control_enabled,
+        'light_on': light_on
     }
     return jsonify(status)
 

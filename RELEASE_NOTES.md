@@ -1,5 +1,37 @@
 # Vino Temperature Control - Release Notes
 
+## Version 1.0 - December 2025
+
+### Major Features
+- **Light State Persistence**: Light on/off state now persists across page reloads and app restarts
+  - Added `light_state.json` for state storage
+  - GPIO pin initialized to saved state on startup
+  - New GET endpoint `/api/light` to query current light state
+
+- **Control Enable Persistence**: Temperature control enable/disable state properly persists
+  - State synced with UI on page load
+  - No more state flickering when navigating between pages
+
+- **Improved State Management**: Complete overhaul of UI state synchronization
+  - Both "Regeling" and "Licht" switches now load their saved state immediately
+  - UI always reflects actual server state
+  - Smooth transitions with no visual flickering
+
+### Bug Fixes
+- **Fixed target temperature update delay**: Target temperature now updates immediately when pressing "Opslaan"
+  - Previously took ~50 seconds due to periodic refresh overwriting the value
+  - Form submission now immediately updates display with server response
+  
+- **Fixed switch state on navigation**: Switches maintain correct state when navigating between pages
+  - Removed conditional state sync that prevented proper initialization
+  - UI now always syncs with server state on every refresh
+
+### Improvements
+- Enhanced error handling for switch toggles
+- Cleaner code with dedicated UI update functions (`updateControlUI()`, `updateLightUI()`)
+- Better state consistency across all pages
+- More reliable GPIO state management
+
 ## Version 0.9 - December 2025
 
 ### Bug Fixes

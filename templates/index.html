@@ -137,43 +137,53 @@
 <script>
 console.log('=== Script loaded ===');
 let controlEnabled = true;
+let lightOn = false;
 const controlEnableSwitch = document.getElementById('controlEnableSwitch');
 const controlEnableText = document.getElementById('controlEnableText');
-console.log('Control switch element:', controlEnableSwitch);
+const lightSwitch = document.getElementById('lightSwitch');
+const lightSwitchText = document.getElementById('lightSwitchText');
+
+// Update UI for control enable switch
+function updateControlUI(enabled) {
+    controlEnabled = enabled;
+    controlEnableText.textContent = controlEnabled ? 'Regeling Aan' : 'Regeling Uit';
+    controlEnableSwitch.classList.toggle('btn-success', controlEnabled);
+    controlEnableSwitch.classList.toggle('btn-secondary', !controlEnabled);
+}
+
+// Update UI for light switch
+function updateLightUI(on) {
+    lightOn = on;
+    lightSwitchText.textContent = lightOn ? 'Licht Uit' : 'Licht Aan';
+    lightSwitch.classList.toggle('btn-success', lightOn);
+    lightSwitch.classList.toggle('btn-secondary', !lightOn);
+}
+
 controlEnableSwitch.onclick = function() {
-    controlEnabled = !controlEnabled;
+    const newState = !controlEnabled;
     fetch('/api/control_enable', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({enabled: controlEnabled})
-    }).then(() => {
-        controlEnableText.textContent = controlEnabled ? 'Regeling Aan' : 'Regeling Uit';
-        controlEnableSwitch.classList.toggle('btn-success', controlEnabled);
-        controlEnableSwitch.classList.toggle('btn-secondary', !controlEnabled);
+        body: JSON.stringify({enabled: newState})
+    }).then(r => r.json()).then(data => {
+        updateControlUI(data.enabled);
+    }).catch(error => {
+        console.error('Error toggling control:', error);
     });
 };
-let lightOn = false;
-const lightSwitch = document.getElementById('lightSwitch');
-const lightSwitchText = document.getElementById('lightSwitchText');
-console.log('Light switch element:', lightSwitch);
+
 lightSwitch.onclick = function() {
-    console.log('=== Light button clicked! ===');
-    lightOn = !lightOn;
-    console.log('Light button clicked, sending:', lightOn);
+    const newState = !lightOn;
+    console.log('Light button clicked, sending:', newState);
     fetch('/api/light', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({on: lightOn})
+        body: JSON.stringify({on: newState})
     })
-    .then(response => {
-        console.log('Response status:', response.status);
-        return response.json();
-    })
+    .then(r => r.json())
     .then(data => {
-        console.log('Response data:', data);
-        lightSwitchText.textContent = lightOn ? 'Licht Uit' : 'Licht Aan';
-        lightSwitch.classList.toggle('btn-success', lightOn);
-        lightSwitch.classList.toggle('btn-secondary', !lightOn);
+        console.log('Light response:', data);
+        updateLightUI(data.on);
     })
     .catch(error => {
         console.error('Error toggling light:', error);
@@ -197,6 +207,13 @@ function updateDashboard() {
         }
         if (document.activeElement !== deviationInput && !deviationInput.dataset.dirty) {
             deviationInput.value = data.deviation?.toFixed(1) ?? '';
+        }
+        // Sync switch states with server (always update to ensure UI consistency)
+        if (data.control_enabled !== undefined) {
+            updateControlUI(data.control_enabled);
+        }
+        if (data.light_on !== undefined) {
+            updateLightUI(data.light_on);
         }
         let status = '';
         if (data.should_heat) status += '<span class="badge bg-danger">Heating</span> ';
@@ -235,15 +252,22 @@ document.getElementById('targetForm').onsubmit = function(e) {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({target: targetVal, deviation: deviationVal})
-    }).then(() => {
+    }).then(r => r.json()).then(data => {
+        // Update the display values immediately with server response
+        document.getElementById('current_target').textContent = data.target?.toFixed(2) ?? '--';
+        document.getElementById('current_deviation').textContent = data.deviation?.toFixed(2) ?? '--';
+        // Update input fields with confirmed values
+        document.getElementById('targetInput').value = data.target?.toFixed(1) ?? '';
+        document.getElementById('deviationInput').value = data.deviation?.toFixed(1) ?? '';
         // Clear dirty flags after successful save
         document.getElementById('targetInput').dataset.dirty = '';
         document.getElementById('deviationInput').dataset.dirty = '';
-        updateDashboard();
     });
 };
-setInterval(updateDashboard, 5000);
-updateDashboard();
+
+// Initialize on page load
+updateDashboard(); // Load initial state immediately
+setInterval(updateDashboard, 5000); // Then refresh every 5 seconds
 </script>
 </body>
 </html>
