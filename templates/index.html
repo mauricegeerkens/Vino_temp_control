@@ -54,7 +54,7 @@
     <div class="row">
         <!-- Controls Left -->
     <div class="col-md-5 col-12 mb-4 d-flex">
-            <div class="mb-4 p-4 w-100 d-flex flex-column justify-content-between" style="min-height: 100%;">
+            <div class="glass-box mb-4 p-4 w-100 d-flex flex-column justify-content-between" style="min-height: 100%;">
                 <div>
                     <h3 class="card-title">Temperatuur Regeling</h3>
                     <form id="targetForm" class="mb-3">
@@ -88,7 +88,7 @@
         </div>
         <!-- Barrel Info Right -->
     <div class="col-md-7 col-12">
-            <div class="p-4 h-100" style="min-height: 100%;">
+            <div class="glass-box p-4 h-100" style="min-height: 100%;">
                 <div class="card-body">
                     <h3 class="card-title text text-center mb-3">Actuele Temperatuur</h3>
                     <!-- Room temperature at top, larger -->
@@ -189,13 +189,13 @@ function updateDashboard() {
     fetch('/api/status').then(r => r.json()).then(data => {
         document.getElementById('current_target').textContent = data.target?.toFixed(2) ?? '--';
         document.getElementById('current_deviation').textContent = data.deviation?.toFixed(2) ?? '--';
-        // Only update input fields if not focused
+        // Only update input fields if not focused AND not dirty
         const targetInput = document.getElementById('targetInput');
         const deviationInput = document.getElementById('deviationInput');
-        if (document.activeElement !== targetInput) {
+        if (document.activeElement !== targetInput && !targetInput.dataset.dirty) {
             targetInput.value = data.target?.toFixed(1) ?? '';
         }
-        if (document.activeElement !== deviationInput) {
+        if (document.activeElement !== deviationInput && !deviationInput.dataset.dirty) {
             deviationInput.value = data.deviation?.toFixed(1) ?? '';
         }
         let status = '';
@@ -217,8 +217,16 @@ function adjustValue(inputId, delta) {
         if (val > 5) val = 5;
     }
     input.value = val.toFixed(1);
+    input.dataset.dirty = 'true';
     setTimeout(() => input.focus(), 0);
 }
+// Mark inputs as dirty when user types
+document.getElementById('targetInput').addEventListener('input', function() {
+    this.dataset.dirty = 'true';
+});
+document.getElementById('deviationInput').addEventListener('input', function() {
+    this.dataset.dirty = 'true';
+});
 document.getElementById('targetForm').onsubmit = function(e) {
     e.preventDefault();
     const targetVal = document.getElementById('targetInput').value;
@@ -227,9 +235,14 @@ document.getElementById('targetForm').onsubmit = function(e) {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({target: targetVal, deviation: deviationVal})
-    }).then(() => updateDashboard());
+    }).then(() => {
+        // Clear dirty flags after successful save
+        document.getElementById('targetInput').dataset.dirty = '';
+        document.getElementById('deviationInput').dataset.dirty = '';
+        updateDashboard();
+    });
 };
-setInterval(updateDashboard, 3000);
+setInterval(updateDashboard, 5000);
 updateDashboard();
 </script>
 </body>

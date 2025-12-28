@@ -1,5 +1,20 @@
 # Vino Temperature Control - Release Notes
 
+## Version 0.9 - December 2025
+
+### Bug Fixes
+- **Fixed application slowness**: Increased dashboard update interval from 3 seconds to 5 seconds for better performance
+- **Fixed target temperature saving**: Temperature settings now properly persist when clicking "Opslaan" button
+  - Added dirty flag system to prevent automatic overwrite of user input
+  - Input fields are now protected from auto-update while being edited
+- **Fixed unresponsive buttons**: "Regeling aan/uit" and "Licht aan/uit" buttons now properly respond to clicks
+  - Added missing glass-box CSS styling to control panels
+
+### Improvements
+- Reduced server load with less frequent dashboard updates
+- Better user experience when editing temperature settings
+- More responsive and visible control buttons
+
 ## Version 0.8.1 - December 2025
 
 ### Features
