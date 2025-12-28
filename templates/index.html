@@ -333,7 +333,7 @@ document.getElementById('targetForm').onsubmit = function(e) {
 document.getElementById('targetInput').dataset.dirty = '';
 document.getElementById('deviationInput').dataset.dirty = '';
 updateDashboard(); // Load initial state immediately
-setInterval(updateDashboard, 500); // Ultra-fast refresh every 500ms for high responsiveness
+setInterval(updateDashboard, 2000); // Refresh every 2 seconds (cache updates every 1-5s)
 setInterval(checkWatchdog, 5000); // Check watchdog every 5 seconds
 </script>
 </body>

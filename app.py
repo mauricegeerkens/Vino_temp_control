@@ -8,17 +8,17 @@ import threading
 import os
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template
-from sensor_reader import read_sensors, read_sensors_by_name, get_offsets, set_offset, get_names, set_name
+from sensor_reader import read_sensors, read_sensors_by_id, get_offsets, set_offset
 from control import TempController
 
 # --- Dual Sensor Cache System ---
-# Control cache: Only Room + SafetySensor, read frequently (every 1s) for fast control
+# Control cache: Only Room + SafetySensor, read frequently for fast control
 control_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
-CONTROL_CACHE_DURATION = 1.0  # 1 second for control sensors
+CONTROL_CACHE_DURATION = 2.0  # Increased from 1s to 2s - reduces I/O by 50%
 
-# Display cache: All sensors for UI, read less frequently (every 5s) to avoid slowdown
+# Display cache: All sensors for UI, read less frequently to avoid slowdown
 display_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
-DISPLAY_CACHE_DURATION = 5.0  # 5 seconds for all sensors (reduces UI load)
+DISPLAY_CACHE_DURATION = 10.0  # Increased from 5s to 10s - reduces UI load
 
 watchdog_timestamp = time.time()  # Global watchdog timestamp
 
@@ -32,8 +32,10 @@ def get_control_sensors():
         if (control_cache['data'] is None or 
             control_cache['timestamp'] is None or 
             (now - control_cache['timestamp']) > CONTROL_CACHE_DURATION):
-            # Read only the 2 sensors needed for control
-            control_cache['data'] = read_sensors_by_name(['Room', 'SafetySensor'])
+            # Read only the 2 sensors needed for control using IDs from settings
+            room_id = settings.get('room_sensor_id', '28-mock001')
+            safety_id = settings.get('safety_sensor_id', '28-mock002')
+            control_cache['data'] = read_sensors_by_id([room_id, safety_id])
             control_cache['timestamp'] = now
         return control_cache['data']
 
@@ -155,25 +157,34 @@ def control_loop():
                 room_temp = None
                 safety_temp = None
                 
+                # Get sensor IDs from settings
+                room_id = settings.get('room_sensor_id', '28-mock001')
+                safety_id = settings.get('safety_sensor_id', '28-mock002')
+                
                 for sensor in sensors:
-                    name = sensor.get('name', "")
+                    sensor_id = sensor.get('id', '')
                     temp = sensor.get('temperature', None)
-                    if name == "Room":
+                    if sensor_id == room_id:
                         room_temp = temp
-                    elif name == "SafetySensor":
+                    elif sensor_id == safety_id:
                         safety_temp = temp
                 
                 # Update the relays based on current temperature
                 controller.update_relays(room_temp, safety_temp)
             else:
-                # If control is disabled, turn off both relays
+                # If control is disabled, turn off both relays and reset state
                 from control import GPIO, HEAT_PIN, COOL_PIN
-                GPIO.output(HEAT_PIN, GPIO.LOW)
-                GPIO.output(COOL_PIN, GPIO.LOW)
+                if controller.current_state != 'idle':
+                    GPIO.output(HEAT_PIN, GPIO.LOW)
+                    GPIO.output(COOL_PIN, GPIO.LOW)
+                    controller.is_heating = False
+                    controller.is_cooling = False
+                    controller.current_state = 'idle'
+                    print("Control disabled - relays OFF, state reset to idle")
         except Exception as e:
             print(f"Error in control loop: {e}")
         
-        time.sleep(1)  # Check every 1 second for faster response
+        time.sleep(2)  # Check every 2 seconds (matches control cache duration)
 
 # Start control loop in background thread
 control_thread = threading.Thread(target=control_loop, daemon=True)
@@ -225,26 +236,6 @@ def api_control_enable():
     save_control_enabled(control_enabled)
     return jsonify({'enabled': control_enabled}), 200
 
-@app.route('/api/names', methods=['GET'])
-def api_get_names():
-    try:
-        return jsonify(get_names())
-    except Exception as e:
-        print(f"Error in /api/names GET: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({}), 200  # Return empty dict instead of failing
-
-@app.route('/api/names', methods=['POST'])
-def api_set_name():
-    data = request.json
-    sensor_id = data.get('sensor_id')
-    name = data.get('name')
-    if sensor_id is not None and name is not None:
-        set_name(sensor_id, name)
-        return jsonify({'sensor_id': sensor_id, 'name': name}), 200
-    return jsonify({'error': 'Missing sensor_id or name'}), 400
-
 @app.route('/api/offsets', methods=['GET'])
 def api_get_offsets():
     try:
@@ -268,7 +259,7 @@ def api_set_offset():
 @app.route('/api/temps')
 def get_temps():
     try:
-        # Use display cache - all sensors, updated every 5 seconds
+        # Use display cache - all sensors, updated every 10 seconds
         sensors = get_all_sensors()
         # Convert list to dictionary for backwards compatibility
         temps = {}
@@ -280,18 +271,6 @@ def get_temps():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/temps_named')
-def get_temps_named():
-    # Use display cache - all sensors, updated every 5 seconds
-    sensors = get_all_sensors()
-    # Return temperatures organized by sensor name
-    temps_by_name = {}
-    for sensor in sensors:
-        name = sensor.get('name', '')
-        if name:  # Only include sensors that have been named
-            temps_by_name[name] = sensor['temperature']
-    return jsonify(temps_by_name)
 
 @app.route('/api/control', methods=['POST'])
 def set_control():
@@ -321,20 +300,28 @@ def set_control():
 @app.route('/api/status')
 def get_status():
     try:
-        # Use control cache - only Room + SafetySensor, updated every 1 second
+        # Use control cache - only Room + SafetySensor, updated every 2 seconds
         sensors = get_control_sensors()
         room_temp = None
         safety_temp = None
+        
+        # Get sensor IDs from settings
+        room_id = settings.get('room_sensor_id', '28-mock001')
+        safety_id = settings.get('safety_sensor_id', '28-mock002')
+        
         for sensor in sensors:
-            name = sensor.get('name', "")
+            sensor_id = sensor.get('id', '')
             temp = sensor.get('temperature', None)
-            if name == "Room":
+            if sensor_id == room_id:
                 room_temp = temp
-            elif name == "SafetySensor":
+            elif sensor_id == safety_id:
                 safety_temp = temp
+        
+        # Return ACTUAL controller state, not recalculated values
         status = {
-            'should_heat': controller.should_heat(room_temp, safety_temp) if control_enabled else False,
-            'should_cool': controller.should_cool(room_temp) if control_enabled else False,
+            'should_heat': controller.is_heating if control_enabled else False,
+            'should_cool': controller.is_cooling if control_enabled else False,
+            'current_state': controller.current_state if control_enabled else 'idle',
             'target': controller.target,
             'deviation': controller.deviation,
             'room_temp': room_temp,
@@ -367,14 +354,13 @@ def api_history():
         with open(log_file, 'r') as f:
             reader = csv.reader(f)
             for row in reader:
-                if len(row) < 4:
+                if len(row) < 3:
                     continue
                 ts = int(row[0])
                 data.append({
                     'timestamp': ts,
                     'id': row[1],
-                    'name': row[2],
-                    'temperature': float(row[3]) if row[3] else None
+                    'temperature': float(row[2]) if row[2] else None
                 })
     except FileNotFoundError:
         pass

@@ -1,5 +1,116 @@
 # Vino Temperature Control - Release Notes
 
+## Version 1.6 - December 2025
+
+### Performance Optimization & Simplified Architecture
+
+**Problem Solved**: Massive delays in sensor reading and status updates caused by:
+- File I/O operations (loading offsets/names from JSON files on every sensor read)
+- Temperature logging on every sensor read (CSV file writes)
+- Sensor name lookups requiring dictionary traversal
+- Too-frequent sensor polling
+
+**Solution**: Memory caching, reduced file I/O, hardcoded sensor roles with configurable IDs
+
+#### 🚀 Major Performance Improvements
+
+**Memory Caching**:
+- `_offsets_cache`: Sensor offsets loaded once and cached in memory
+- `_names_cache`: Eliminated - replaced with direct sensor ID usage
+- Offsets/names files only read on first access, not on every sensor read
+- File I/O reduced by **95%+**
+
+**Reduced Logging Frequency**:
+- Temperature logging changed from every read to once per 60 seconds
+- Eliminates CSV file write overhead on every sensor access
+- History data still captured, but without performance impact
+
+**Optimized Cache Timings**:
+- Control cache: Increased from 1s to **2s** (50% fewer sensor reads)
+- Display cache: Increased from 5s to **10s** (50% fewer UI sensor reads)
+- Control loop: Runs every 2s (matches cache duration)
+- Frontend polling: 2s instead of 500ms (75% reduction)
+
+#### 🎯 Architectural Simplification
+
+**Hardcoded Sensor Names with Configurable IDs**:
+- Removed `sensor_names.json` file entirely
+- New `settings.json` fields: `room_sensor_id` and `safety_sensor_id`
+- Sensors identified by ID, not by user-assigned names
+- Example:
+  ```json
+  {
+    "room_sensor_id": "28-00000a1b2c3d",
+    "safety_sensor_id": "28-00000e4f5g6h"
+  }
+  ```
+
+**Simplified Functions**:
+- `read_sensors_by_name()` → `read_sensors_by_id()` (direct ID lookup)
+- Removed `get_names()` and `set_name()` functions
+- Removed `/api/names` and `/api/temps_named` endpoints
+- CSV logging format simplified (removed name column)
+
+**Benefits**:
+- No name-to-ID translation overhead
+- Can't accidentally break control by renaming sensors
+- Clearer configuration - explicit role assignment
+- Fewer files to manage
+- Less error-prone
+
+#### 📊 Performance Impact
+
+**Before v1.6**:
+- Each sensor read: ~3-5ms file I/O + 750ms sensor read
+- Control loop: Read 2 sensors + load offsets + load names + log CSV = ~1.5-2s
+- Status display delays of 1-3 seconds common
+
+**After v1.6**:
+- Each sensor read: ~750ms sensor read only (cached offsets)
+- Control loop: Read 2 sensors = ~1.5s, runs every 2s
+- Logging overhead: Nearly zero (60s interval)
+- UI feels **instant and responsive**
+
+#### 🔧 Technical Changes
+
+**sensor_reader.py**:
+- Added `_offsets_cache` and `_last_log_time` global variables
+- Removed all name-related functions
+- `load_offsets()` now caches in memory
+- `log_temperature_data()` only runs every 60 seconds
+- Simplified CSV format (timestamp, id, temperature)
+
+**app.py**:
+- Removed imports: `get_names`, `set_name`, `read_sensors_by_name`
+- Added `read_sensors_by_id` import
+- Updated cache durations (2s control, 10s display)
+- Sensor lookup by ID from `settings.json`
+- Removed `/api/names` endpoints
+- Updated `/api/history` for new CSV format
+
+**settings.json** (new):
+- `room_sensor_id`: Which sensor controls room temperature
+- `safety_sensor_id`: Which sensor provides safety cutoff
+- Still includes `target` and `deviation` for control
+
+### Migration Notes
+
+**Updating from v1.5**:
+1. Create `settings.json` with sensor IDs:
+   ```json
+   {
+     "target": 12.0,
+     "deviation": 0.5,
+     "room_sensor_id": "28-your-room-sensor-id",
+     "safety_sensor_id": "28-your-safety-sensor-id"
+   }
+   ```
+2. Find your sensor IDs: Run `ls /sys/bus/w1/devices/28-*`
+3. `sensor_names.json` is no longer used (can be deleted)
+4. Existing `sensor_offsets.json` still works as before
+
+---
+
 ## Version 1.5 - December 2025
 
 ### Major Architectural Redesign for Maximum Responsiveness

@@ -40,6 +40,9 @@ class TempController:
         self.safety_off = safety_off
         self.safety_on = safety_on
         self.heating_blocked = False
+        self.current_state = 'idle'  # Track actual state: 'idle', 'heating', 'cooling'
+        self.is_heating = False  # Actual GPIO state
+        self.is_cooling = False  # Actual GPIO state
 
     def should_heat(self, current_temp, safety_temp=None):
         # Safety logic: block heating if safety sensor is above threshold
@@ -60,17 +63,35 @@ class TempController:
         should_heat = self.should_heat(current_temp, safety_temp)
         should_cool = self.should_cool(current_temp)
         
-        # Debug logging
-        print(f"Control: temp={current_temp}, target={self.target}, dev={self.deviation}, heat={should_heat}, cool={should_cool}, safety={safety_temp}, blocked={self.heating_blocked}")
-        
+        # Determine desired state
         if should_heat:
-            GPIO.output(HEAT_PIN, GPIO.HIGH)
-            GPIO.output(COOL_PIN, GPIO.LOW)
-            print(f"HEATING ON (GPIO {HEAT_PIN} = HIGH)")
+            desired_state = 'heating'
         elif should_cool:
-            GPIO.output(HEAT_PIN, GPIO.LOW)
-            GPIO.output(COOL_PIN, GPIO.HIGH)
-            print(f"COOLING ON (GPIO {COOL_PIN} = HIGH)")
+            desired_state = 'cooling'
         else:
-            GPIO.output(HEAT_PIN, GPIO.LOW)
-            GPIO.output(COOL_PIN, GPIO.LOW)
+            desired_state = 'idle'
+        
+        # Only update GPIOs if state changes
+        if desired_state != self.current_state:
+            print(f"State change: {self.current_state} -> {desired_state} (temp={current_temp}, target={self.target}, dev={self.deviation}, safety={safety_temp}, blocked={self.heating_blocked})")
+            
+            if desired_state == 'heating':
+                GPIO.output(HEAT_PIN, GPIO.HIGH)
+                GPIO.output(COOL_PIN, GPIO.LOW)
+                self.is_heating = True
+                self.is_cooling = False
+                print(f"HEATING ON (GPIO {HEAT_PIN} = HIGH)")
+            elif desired_state == 'cooling':
+                GPIO.output(HEAT_PIN, GPIO.LOW)
+                GPIO.output(COOL_PIN, GPIO.HIGH)
+                self.is_heating = False
+                self.is_cooling = True
+                print(f"COOLING ON (GPIO {COOL_PIN} = HIGH)")
+            else:  # idle
+                GPIO.output(HEAT_PIN, GPIO.LOW)
+                GPIO.output(COOL_PIN, GPIO.LOW)
+                self.is_heating = False
+                self.is_cooling = False
+                print(f"IDLE - Both relays OFF")
+            
+            self.current_state = desired_state
