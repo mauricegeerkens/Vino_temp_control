@@ -231,35 +231,29 @@ def control_loop():
     while True:
         try:
             if control_enabled:
-                # Only read the 2 sensors needed for control - fast!
+                # Read all sensors for frost protection
+                sensors = get_all_sensors()
+                
                 # Get sensor IDs from settings
                 room_id = settings.get('room_sensor_id', '28-mock001')
                 safety_id = settings.get('safety_sensor_id', '')
                 
-                # Build list of sensors to read (only read if IDs are configured)
-                sensor_ids = [room_id] if room_id else []
-                if safety_id:
-                    sensor_ids.append(safety_id)
-                
-                if not sensor_ids:
-                    # No sensors configured, skip this iteration
-                    time.sleep(2)
-                    continue
-                
-                sensors = read_sensors_by_id(sensor_ids)
                 room_temp = None
                 safety_temp = None
+                all_temps = []
                 
                 for sensor in sensors:
                     sensor_id = sensor.get('id', '')
                     temp = sensor.get('temperature', None)
+                    if temp is not None:
+                        all_temps.append(temp)
                     if sensor_id == room_id:
                         room_temp = temp
                     elif safety_id and sensor_id == safety_id:
                         safety_temp = temp
                 
-                # Update the relays based on current temperature
-                controller.update_relays(room_temp, safety_temp)
+                # Update the relays based on current temperature with frost protection
+                controller.update_relays(room_temp, safety_temp, all_temps)
             else:
                 # If control is disabled, turn off both relays and reset state
                 from control import GPIO, HEAT_PIN, COOL_PIN
@@ -494,6 +488,8 @@ def get_status():
             'room_temp': room_temp,
             'safety_temp': safety_temp,
             'heating_blocked': controller.heating_blocked,
+            'cooling_blocked': controller.cooling_blocked,
+            'min_temp': controller.min_temp,
             'control_enabled': control_enabled,
             'light_on': light_on
         }

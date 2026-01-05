@@ -162,6 +162,11 @@
                     <div class="mb-2">Doel temperatuur: <span id="current_target">--</span> °C</div>
                     <div class="mb-2">Afwijking: <span id="current_deviation">--</span> °C</div>
                     <div class="mb-2">Status: <span id="status">--</span></div>
+                    <!-- Frost Protection Warning -->
+                    <div id="frostWarning" class="alert alert-warning mt-3" style="display:none;">
+                        <strong>⚠️ VORST BEVEILIGING ACTIEF</strong><br>
+                        <span id="frostMessage">Koeling geblokkeerd - Wachten op 5°C</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -368,6 +373,17 @@ function updateDashboard() {
         if (data.should_cool) status += '<span class="badge bg-info">Koelen</span> ';
         if (!data.should_heat && !data.should_cool) status += '<span class="badge bg-success">Stabiel</span>';
         document.getElementById('status').innerHTML = status;
+        
+        // Frost protection warning
+        const frostWarning = document.getElementById('frostWarning');
+        const frostMessage = document.getElementById('frostMessage');
+        if (data.cooling_blocked && data.min_temp !== null && data.min_temp !== undefined) {
+            const minTempDisplay = roundToHalf(data.min_temp) || data.min_temp.toFixed(1);
+            frostMessage.innerHTML = `Koeling geblokkeerd bij ${minTempDisplay}°C<br>Wachten tot alle sensors ≥5.0°C bereiken`;
+            frostWarning.style.display = 'block';
+        } else {
+            frostWarning.style.display = 'none';
+        }
     })
     .catch(error => {
         console.error('Error fetching status:', error);
