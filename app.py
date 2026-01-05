@@ -153,6 +153,77 @@ safety_on_temp = settings.get("safety_on_temp", 25.0)
 SAFETY_SENSOR_NAME = "SafetySensor"  # Change this to your safety sensor's name
 controller = TempController(target=target, deviation=deviation, safety_sensor_name=SAFETY_SENSOR_NAME, safety_off=safety_off_temp, safety_on=safety_on_temp)
 
+# --- Data Cleanup ---
+def cleanup_old_temperature_data():
+    """Remove temperature data older than 60 days from the CSV file"""
+    log_file = 'temperature_log.csv'
+    temp_file = 'temperature_log_temp.csv'
+    
+    try:
+        # Calculate cutoff timestamp (60 days ago)
+        cutoff_date = datetime.now() - timedelta(days=60)
+        cutoff_timestamp = int(cutoff_date.timestamp())
+        
+        rows_kept = 0
+        rows_removed = 0
+        
+        # Read existing data and write only recent data to temp file
+        with open(log_file, 'r') as infile, open(temp_file, 'w', newline='') as outfile:
+            reader = csv.reader(infile)
+            writer = csv.writer(outfile)
+            
+            for row in reader:
+                if not row or len(row) < 3:
+                    continue
+                    
+                try:
+                    timestamp = int(row[0])
+                    if timestamp >= cutoff_timestamp:
+                        writer.writerow(row)
+                        rows_kept += 1
+                    else:
+                        rows_removed += 1
+                except (ValueError, IndexError):
+                    # Skip malformed rows
+                    continue
+        
+        # Replace old file with cleaned file
+        os.replace(temp_file, log_file)
+        print(f"Temperature data cleanup completed: kept {rows_kept} rows, removed {rows_removed} old rows")
+        
+    except FileNotFoundError:
+        print("Temperature log file not found, skipping cleanup")
+    except Exception as e:
+        print(f"Error during temperature data cleanup: {e}")
+        # Clean up temp file if it exists
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+
+def cleanup_loop():
+    """Background thread that periodically cleans up old temperature data"""
+    print("Cleanup loop started - will run daily at 3 AM")
+    while True:
+        try:
+            # Calculate seconds until next 3 AM
+            now = datetime.now()
+            next_run = now.replace(hour=3, minute=0, second=0, microsecond=0)
+            if next_run <= now:
+                # If 3 AM has passed today, schedule for tomorrow
+                next_run += timedelta(days=1)
+            
+            sleep_seconds = (next_run - now).total_seconds()
+            print(f"Next cleanup scheduled for {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            time.sleep(sleep_seconds)
+            
+            # Run cleanup
+            cleanup_old_temperature_data()
+            
+        except Exception as e:
+            print(f"Error in cleanup loop: {e}")
+            # Wait 1 hour before trying again if there's an error
+            time.sleep(3600)
+
 # --- Control Loop ---
 def control_loop():
     """Background thread that controls heating/cooling relays"""
@@ -207,6 +278,10 @@ def control_loop():
 # Start control loop in background thread
 control_thread = threading.Thread(target=control_loop, daemon=True)
 control_thread.start()
+
+# Start cleanup loop in background thread
+cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+cleanup_thread.start()
 
 # --- API Endpoints ---
 @app.route('/api/watchdog', methods=['GET'])
@@ -296,12 +371,16 @@ def get_temps_named():
     try:
         sensors = get_all_sensors()
         sensor_names = settings.get('sensor_names', {})
+        safety_sensor_id = settings.get('safety_sensor_id', '')
         temps_by_name = {}
         for sensor in sensors:
             sensor_id = sensor['id']
             name = sensor_names.get(sensor_id, '')
             if name:
                 temps_by_name[name] = sensor['temperature']
+            # Also include safety sensor explicitly if configured
+            if safety_sensor_id and sensor_id == safety_sensor_id:
+                temps_by_name['Safety'] = sensor['temperature']
         return jsonify(temps_by_name)
     except Exception as e:
         print(f"Error in /api/temps_named: {e}")
@@ -438,20 +517,63 @@ def history():
 def api_history():
     log_file = 'temperature_log.csv'
     data = []
+    sensor_names = settings.get('sensor_names', {})
+    
+    # Get date range parameters (in days offset from today)
+    days_back = int(request.args.get('days_back', 0))
+    days_range = int(request.args.get('days_range', 7))
+    
+    # Calculate timestamp range
+    end_date = datetime.now() - timedelta(days=days_back)
+    start_date = end_date - timedelta(days=days_range)
+    
+    start_timestamp = int(start_date.timestamp())
+    end_timestamp = int(end_date.timestamp())
+    
     try:
         with open(log_file, 'r') as f:
             reader = csv.reader(f)
             for row in reader:
-                if len(row) < 3:
+                # Skip empty rows
+                if not row or len(row) < 3:
                     continue
-                ts = int(row[0])
-                data.append({
-                    'timestamp': ts,
-                    'id': row[1],
-                    'temperature': float(row[2]) if row[2] else None
-                })
+                
+                try:
+                    # Handle both 3-column and 4-column CSV formats
+                    # Format 1 (old): timestamp, sensor_id, temperature
+                    # Format 2 (current): timestamp, old_id, name, temperature
+                    if len(row) == 4:
+                        # 4-column format: timestamp, old_id, name, temperature
+                        ts = int(row[0])
+                        name = row[2]  # Use the name from column 3
+                        temp = float(row[3]) if row[3] else None
+                    else:
+                        # 3-column format: timestamp, sensor_id, temperature
+                        ts = int(row[0])
+                        sensor_id = row[1]
+                        # Map sensor ID to name
+                        name = sensor_names.get(sensor_id, sensor_id)
+                        temp = float(row[2]) if row[2] else None
+                    
+                    # Only include data within the specified date range
+                    if start_timestamp <= ts <= end_timestamp:
+                        data.append({
+                            'timestamp': ts,
+                            'name': name,
+                            'temperature': temp
+                        })
+                except (ValueError, IndexError) as e:
+                    # Skip malformed rows
+                    print(f"Skipping malformed row: {row}, error: {e}")
+                    continue
+                    
     except FileNotFoundError:
-        pass
+        print("Temperature log file not found")
+    except Exception as e:
+        print(f"Error reading history data: {e}")
+        import traceback
+        traceback.print_exc()
+    
     return jsonify(data)
 
 @app.route('/settings')

@@ -25,89 +25,302 @@
       text-shadow: none !important;
       opacity: 1 !important;
     }
+    .btn-sm-compact {
+      padding: 0.5rem 1rem;
+      font-size: 1.1rem;
+      min-height: 44px;
+      min-width: 44px;
+    }
+    @media (max-width: 576px) {
+      .btn-sm-compact {
+        padding: 0.4rem 0.8rem;
+        font-size: 1rem;
+        min-height: 40px;
+        min-width: 40px;
+      }
+      h4 {
+        font-size: 0.9rem !important;
+      }
+      #dateRange {
+        font-size: 0.7rem !important;
+        min-width: 100px !important;
+      }
+    }
     </style>
 </head>
 <body class="bg-dark text-light">
-<div class="container py-4">
-    <h1 class="mb-4">7-Daags temperatuur overzicht</h1>
-    <a href="/" class="btn btn-outline-light mb-4">Terug naar hoofdpagina</a>
-    <div class="card p-4 bg-dark bg-opacity-75">
-  <canvas id="tempHistogram" height="320"></canvas>
+<div class="container-fluid py-2 px-2 px-md-3">
+    <div class="row mb-2 mb-md-3">
+        <div class="col-12">
+            <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <h4 class="mb-0" style="font-size: 1rem;">7-Daags overzicht</h4>
+                    <button id="viewToggle" class="btn btn-outline-light btn-sm-compact">
+                        <span id="viewToggleText">Daggemiddelden</span>
+                    </button>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap justify-content-center flex-grow-1">
+                    <a href="/" class="btn btn-outline-light btn-sm-compact">Terug</a>
+                    <div class="d-flex gap-1 align-items-center flex-wrap">
+                        <button id="prevWeek" class="btn btn-outline-light btn-sm-compact">&lt;&lt;</button>
+                        <button id="prevDay" class="btn btn-outline-light btn-sm-compact">&lt;</button>
+                        <div class="px-1 px-sm-2" style="min-width: 120px; text-align: center; font-size: 0.8rem;">
+                            <strong id="dateRange">Laden...</strong>
+                        </div>
+                        <button id="nextDay" class="btn btn-outline-light btn-sm-compact">&gt;</button>
+                        <button id="nextWeek" class="btn btn-outline-light btn-sm-compact">&gt;&gt;</button>
+                        <button id="today" class="btn btn-success btn-sm-compact">Nu</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="card p-2 p-md-3 bg-dark bg-opacity-75">
+                <canvas id="tempHistogram"></canvas>
+            </div>
+        </div>
     </div>
 </div>
 <script src="/static/chart.js"></script>
 <script src="/static/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
-fetch('/api/history', {
-  signal: AbortSignal.timeout(5000)  // 5 second timeout for larger data
-})
-  .then(res => res.json())
-  .then(data => {
-    // Define consistent colors for known sensors
-    const colorMap = {
-      'Room': '#FF6384',
-      'Johanniter': '#36A2EB',
-      'Solaris': '#FFCE56',
-      'Souvignier gris': '#4BC0C0'
-    };
-    
-    // Only include the 4 known sensors
-    const knownSensors = ['Room', 'Johanniter', 'Solaris', 'Souvignier gris'];
-    
-    // Group by sensor name - only include known sensors
-    const sensors = {};
-    data.forEach(d => {
-      if (d.name && knownSensors.includes(d.name)) {
-        if (!sensors[d.name]) sensors[d.name] = [];
-        sensors[d.name].push({
-          x: new Date(d.timestamp * 1000),
-          y: d.temperature
-        });
+let chart = null;
+let rawData = null;
+let showDailyAverages = false;
+let daysBack = 0;  // How many days back from today (0 = today)
+const daysRange = 7;  // Always show 7 days
+
+const colorMap = {
+  'Room': '#FF6384',
+  'Johanniter': '#36A2EB',
+  'Solaris': '#FFCE56',
+  'Souvignier gris': '#4BC0C0'
+};
+
+const knownSensors = ['Room', 'Johanniter', 'Solaris', 'Souvignier gris'];
+
+// Update date range display
+function updateDateRangeDisplay() {
+  const endDate = new Date();
+  endDate.setDate(endDate.getDate() - daysBack);
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - daysRange);
+  
+  const options = { day: 'numeric', month: 'short', year: 'numeric' };
+  const rangeText = `${startDate.toLocaleDateString('nl-NL', options)} - ${endDate.toLocaleDateString('nl-NL', options)}`;
+  document.getElementById('dateRange').textContent = rangeText;
+  
+  // Disable next buttons if we're at today
+  document.getElementById('nextDay').disabled = daysBack <= 0;
+  document.getElementById('nextWeek').disabled = daysBack <= 0;
+  document.getElementById('today').disabled = daysBack <= 0;
+}
+
+// Navigation button handlers
+document.getElementById('prevDay').onclick = () => {
+  daysBack += 1;
+  loadData();
+};
+
+document.getElementById('nextDay').onclick = () => {
+  if (daysBack > 0) {
+    daysBack -= 1;
+    loadData();
+  }
+};
+
+document.getElementById('prevWeek').onclick = () => {
+  daysBack += 7;
+  loadData();
+};
+
+document.getElementById('nextWeek').onclick = () => {
+  daysBack = Math.max(0, daysBack - 7);
+  loadData();
+};
+
+document.getElementById('today').onclick = () => {
+  daysBack = 0;
+  loadData();
+};
+
+// Toggle button handler
+document.getElementById('viewToggle').onclick = function() {
+  showDailyAverages = !showDailyAverages;
+  document.getElementById('viewToggleText').textContent = 
+    showDailyAverages ? 'Alle meetpunten weergeven' : 'Daggemiddelden weergeven';
+  renderChart();
+};
+
+function aggregateDailyData(sensors) {
+  const dailyData = {};
+  
+  // Group by sensor name and day
+  Object.keys(sensors).forEach(name => {
+    dailyData[name] = {};
+    sensors[name].forEach(point => {
+      // Get date string (YYYY-MM-DD) for grouping
+      const date = new Date(point.x);
+      const dateKey = date.toISOString().split('T')[0];
+      
+      if (!dailyData[name][dateKey]) {
+        dailyData[name][dateKey] = { sum: 0, count: 0, date: dateKey };
       }
+      dailyData[name][dateKey].sum += point.y;
+      dailyData[name][dateKey].count += 1;
     });
-    
-    const datasets = Object.keys(sensors).map(name => ({
-      label: name,
-      data: sensors[name],
-      fill: false,
-      borderColor: colorMap[name],
-      tension: 0.1,
-      borderWidth: 2
-    }));
-    
-    new Chart(document.getElementById('tempHistogram').getContext('2d'), {
-      type: 'line',
-      data: { datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        scales: {
-          x: { 
-            type: 'time', 
-            time: { unit: 'day' }, 
-            title: { display: true, text: 'Datum', color: '#fff' },
-            ticks: { color: '#fff' },
-            grid: { color: 'rgba(255,255,255,0.1)' }
+  });
+  
+  // Calculate averages
+  const avgSensors = {};
+  Object.keys(dailyData).forEach(name => {
+    avgSensors[name] = Object.values(dailyData[name]).map(day => ({
+      x: new Date(day.date + 'T12:00:00'),  // Set to noon for better display
+      y: parseFloat((day.sum / day.count).toFixed(2))
+    })).sort((a, b) => a.x - b.x);
+  });
+  
+  return avgSensors;
+}
+
+function renderChart() {
+  if (!rawData) return;
+  
+  const sensors = showDailyAverages ? aggregateDailyData(rawData) : rawData;
+  
+  const datasets = Object.keys(sensors).map(name => ({
+    label: name,
+    data: sensors[name],
+    fill: false,
+    borderColor: colorMap[name],
+    tension: 0.1,
+    borderWidth: 2,
+    pointRadius: showDailyAverages ? 4 : 2
+  }));
+  
+  // Calculate date range for x-axis bounds
+  const endDate = new Date();
+  endDate.setDate(endDate.getDate() - daysBack);
+  endDate.setHours(23, 59, 59, 999);
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - daysRange + 1);
+  startDate.setHours(0, 0, 0, 0);
+  
+  if (chart) {
+    chart.destroy();
+  }
+  
+  chart = new Chart(document.getElementById('tempHistogram').getContext('2d'), {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: window.innerWidth < 576 ? 1 : (window.innerWidth < 768 ? 1.5 : 2),
+      scales: {
+        x: { 
+          type: 'time',
+          min: startDate,
+          max: endDate,
+          time: {
+            unit: 'day',
+            tooltipFormat: 'dd MMM yyyy HH:mm',
+            displayFormats: {
+              day: 'dd MMM',
+              hour: 'HH:mm'
+            }
           },
-          y: { 
-            title: { display: true, text: 'Temperatuur (°C)', color: '#fff' },
-            ticks: { color: '#fff' },
-            grid: { color: 'rgba(255,255,255,0.1)' }
+          title: { display: false },
+          ticks: { 
+            color: '#333', 
+            font: { size: window.innerWidth < 576 ? 12 : 14 },
+            maxRotation: 45,
+            minRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 8
+          },
+          grid: { color: 'rgba(50,50,50,0.3)' }
+        },
+        y: { 
+          title: { display: true, text: 'Temp (°C)', color: '#333', font: { size: window.innerWidth < 576 ? 12 : 14 } },
+          ticks: { color: '#333', font: { size: window.innerWidth < 576 ? 12 : 14 } },
+          grid: { color: 'rgba(50,50,50,0.3)' },
+          min: 0,
+          max: 40
+        }
+      },
+      plugins: { 
+        legend: { 
+          display: true,
+          position: window.innerWidth < 576 ? 'bottom' : 'top',
+          labels: { 
+            color: '#333', 
+            font: { size: window.innerWidth < 576 ? 12 : 14 }, 
+            padding: window.innerWidth < 576 ? 3 : 4, 
+            boxWidth: window.innerWidth < 576 ? 12 : 15 
           }
         },
-        plugins: { 
-          legend: { 
-            display: true,
-            labels: { color: '#fff' }
+        tooltip: {
+          callbacks: {
+            title: function(context) {
+              const date = new Date(context[0].parsed.x);
+              return showDailyAverages ? 
+                date.toLocaleDateString('nl-NL') : 
+                date.toLocaleString('nl-NL');
+            }
           }
         }
       }
-    });
-  })
-  .catch(error => {
-    console.error('Error loading history data:', error);
-    document.querySelector('.card').innerHTML = '<div class="alert alert-danger">Failed to load history data. Please refresh the page.</div>';
+    }
   });
+}
+
+// Load data from API
+function loadData() {
+  updateDateRangeDisplay();
+  
+  fetch(`/api/history?days_back=${daysBack}&days_range=${daysRange}`, {
+    signal: AbortSignal.timeout(5000)
+  })
+    .then(res => res.json())
+    .then(data => {
+      // Group by sensor name - only include known sensors
+      const sensors = {};
+      data.forEach(d => {
+        if (d.name && knownSensors.includes(d.name)) {
+          if (!sensors[d.name]) sensors[d.name] = [];
+          sensors[d.name].push({
+            x: new Date(d.timestamp * 1000),
+            y: d.temperature
+          });
+        }
+      });
+      
+      rawData = sensors;
+      renderChart();
+    })
+    .catch(error => {
+      console.error('Error loading history data:', error);
+      document.querySelector('.card').innerHTML = '<div class="alert alert-danger">Failed to load history data. Please refresh the page.</div>';
+    });
+}
+
+// Handle window resize for responsive chart
+let resizeTimeout;
+window.addEventListener('resize', function() {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(function() {
+    if (rawData) {
+      renderChart();
+    }
+  }, 250);
+});
+
+// Initial load
+loadData();
 </script>
 <script src="/static/bootstrap.bundle.min.js"></script>
 </body>
