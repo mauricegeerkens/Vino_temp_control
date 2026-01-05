@@ -55,7 +55,18 @@ class TempController:
                 self.heating_blocked = False
         if self.heating_blocked:
             return False
-        return current_temp is not None and current_temp < self.target - self.deviation
+        
+        # Start heating when below target - deviation
+        # Stop heating when target is reached (not at target - deviation)
+        if current_temp is None:
+            return False
+        
+        if self.is_heating:
+            # If already heating, continue until target is reached
+            return current_temp < self.target
+        else:
+            # Start heating when below target - deviation
+            return current_temp < self.target - self.deviation
 
     def check_frost_protection(self, all_temps):
         """Frost protection: block cooling if any sensor is at/below 0°C, unblock when all above 5°C"""
@@ -90,7 +101,18 @@ class TempController:
         # Check frost protection first
         if self.cooling_blocked:
             return False
-        return current_temp is not None and current_temp > self.target + self.deviation
+        
+        # Start cooling when above target + deviation
+        # Stop cooling when target is reached (not at target + deviation)
+        if current_temp is None:
+            return False
+        
+        if self.is_cooling:
+            # If already cooling, continue until target is reached
+            return current_temp > self.target
+        else:
+            # Start cooling when above target + deviation
+            return current_temp > self.target + self.deviation
 
     def update_relays(self, current_temp, safety_temp=None, all_temps=None):
         # Check frost protection with all sensor temperatures

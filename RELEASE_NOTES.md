@@ -1,5 +1,25 @@
 # Vino Temperature Control - Release Notes
 
+## Version 2.2 - January 2026
+
+### Improved Temperature Control Logic
+
+**Bug Fix**:
+
+#### 🎯 Target Temperature Reached
+- Fixed control logic to ensure target temperature is actually reached
+- Previously: Cooling stopped at target + deviation (e.g., 24°C for target 22°C, deviation 2°C)
+- Previously: Heating stopped at target - deviation (e.g., 20°C for target 22°C, deviation 2°C)
+- Now: Deviation only controls when to **start** heating/cooling
+- Now: Heating/cooling **continues until target is reached** (22°C in example)
+- Provides more accurate temperature control while maintaining hysteresis to prevent frequent cycling
+
+**Technical Details**:
+- Modified `should_heat()` method to check current state and continue until target reached
+- Modified `should_cool()` method to check current state and continue until target reached
+- Deviation still prevents frequent on/off cycling by setting activation thresholds
+- Ensures precise temperature control matching user expectations
+
 ## Version 1.7 - December 2025
 
 ### Enhanced Sensor Management & Configurable Safety
