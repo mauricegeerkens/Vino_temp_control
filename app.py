@@ -4,6 +4,7 @@ import atexit
 import threading
 import os
 import time
+import csv
 from datetime import datetime, timedelta
 from queue import Queue, Empty
 from flask import Flask, jsonify, request, render_template, Response
@@ -166,6 +167,22 @@ safety_on_temp = settings.get("safety_on_temp", 25.0)
 SAFETY_SENSOR_NAME = "SafetySensor"  # Change this to your safety sensor's name
 controller = TempController(target=target, deviation=deviation, safety_sensor_name=SAFETY_SENSOR_NAME, safety_off=safety_off_temp, safety_on=safety_on_temp)
 
+# --- Temperature Logging ---
+def log_temperature_data(sensors):
+    """Log temperature readings to CSV file with sensor names"""
+    log_file = 'temperature_log.csv'
+    timestamp = int(time.time())
+    sensor_names = settings.get('sensor_names', {})
+    
+    with open(log_file, 'a', newline='') as f:
+        writer = csv.writer(f)
+        for sensor in sensors:
+            sensor_id = sensor.get('id', '')
+            name = sensor_names.get(sensor_id, sensor_id)  # Get name or use ID as fallback
+            temp = sensor.get('temperature', '')
+            # Write in 4-column format: timestamp, sensor_id, name, temperature
+            writer.writerow([timestamp, sensor_id, name, temp])
+
 # --- Data Cleanup ---
 def cleanup_old_temperature_data():
     """Remove temperature data older than 60 days from the CSV file"""
@@ -287,10 +304,13 @@ control_thread = threading.Thread(target=control_loop, daemon=True)
 control_thread.start()
 
 # --- Sensor Polling Thread ---
+_last_log_time = 0  # Track last temperature log time
+LOG_INTERVAL = 60  # Only log temperature data every 60 seconds
+
 def sensor_polling_loop():
     """Background thread that polls sensors every 20s and updates cache"""
     print("Sensor polling thread started - updating cache every 20 seconds")
-    global watchdog_timestamp
+    global watchdog_timestamp, _last_log_time
     
     while True:
         try:
@@ -317,6 +337,16 @@ def sensor_polling_loop():
                 
                 watchdog_timestamp = time.time()
                 print(f"Sensor cache updated: {len(sensors)} total, {len(control_sensors)} for control")
+                
+                # Log readings for histogram - only every LOG_INTERVAL seconds
+                current_time = time.time()
+                if current_time - _last_log_time >= LOG_INTERVAL:
+                    try:
+                        log_temperature_data(sensors)
+                        _last_log_time = current_time
+                        print(f"Temperature data logged at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    except Exception as e:
+                        print(f"Error logging temperature data: {e}")
             else:
                 print("Warning: sensor polling returned no data")
                 

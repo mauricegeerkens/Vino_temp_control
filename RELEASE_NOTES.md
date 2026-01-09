@@ -1,6 +1,29 @@
 # Vino Temperature Control - Release Notes
 
-## Version 2.2 - January 2026
+## Version 3.1 - January 2026
+
+### Bug Fixes
+
+**Fixed Historical Data Logging**:
+- Restored temperature logging functionality that was broken in v3.0
+- Temperature data is now logged every 60 seconds to CSV file
+- Historical chart will display data again after system restart
+- Fixed issue where 20-second sensor polling didn't trigger data logging
+- Uses 4-column CSV format: timestamp, sensor_id, name, temperature
+
+**Improved Mobile UI**:
+- Added spacing between "Sensor kalibratie" and "7-Daagse temperatuur overzicht" buttons on mobile devices
+- Buttons now stack properly with appropriate margin on phone screens
+
+### Technical Details
+- Added explicit `log_temperature_data()` function to app.py
+- Sensor polling thread now calls logging function every 60 seconds
+- Logging happens in background without blocking sensor reads or API responses
+- CSV format compatible with both old and new data for historical chart
+
+---
+
+## Version 3.0 - January 2026
 
 ### Improved Temperature Control Logic
 
