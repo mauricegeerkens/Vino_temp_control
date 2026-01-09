@@ -6,48 +6,69 @@
     <title>Wijn klimaat kast</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        /* Hide scrollbars globally - especially important for Raspberry Pi/Chromium */
-        html {
-            height: 100vh;
-            max-height: 100vh;
-            overflow: hidden !important;
-        }
-        html::-webkit-scrollbar {
-            display: none !important;
-            width: 0 !important;
-            height: 0 !important;
-        }
+        /* Base styles for all devices */
         body {
             background: url('/static/images/background.jpg') no-repeat center center fixed;
             background-size: cover;
-            height: 100vh;
-            max-height: 100vh;
-            overflow: hidden !important;
             margin: 0;
             padding: 0;
         }
-        body::-webkit-scrollbar {
-            display: none !important;
-            width: 0 !important;
-            height: 0 !important;
+        
+        /* Hide scrollbars only on larger screens (7-inch display and up) */
+        @media (min-width: 768px) {
+            html {
+                height: 100vh;
+                max-height: 100vh;
+                overflow: hidden !important;
+            }
+            html::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+            }
+            body {
+                height: 100vh;
+                max-height: 100vh;
+                overflow: hidden !important;
+            }
+            body::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+            }
+            /* Hide scrollbars for all elements - Raspberry Pi compatibility */
+            *::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+            }
+            * {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
         }
-        /* Hide scrollbars for all elements - Raspberry Pi compatibility */
-        *::-webkit-scrollbar {
-            display: none !important;
-            width: 0 !important;
-            height: 0 !important;
-        }
-        * {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
+        
+        /* On mobile, allow scrolling but hide scrollbar visually */
+        @media (max-width: 767px) {
+            html, body {
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            /* Hide scrollbar but allow scrolling on mobile */
+            html::-webkit-scrollbar,
+            body::-webkit-scrollbar {
+                display: none;
+            }
+            html {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
         }
         #status {
             font-size: 1.5rem;
-            font-weight: bold;
         }
         #current_target, #current_deviation {
             font-size: 1.2rem;
-            font-weight: bold;
         }
         #targetInput, #deviationInput {
             font-size: 1.2rem;
@@ -124,12 +145,6 @@
         }
         .screensaver-status {
             font-size: 2.5rem;
-            margin-top: 40px;
-            padding: 20px 40px;
-            border-radius: 20px;
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(10px);
-            text-shadow: 0 4px 16px rgba(0,0,0,0.5);
         }
         .screensaver-time {
             font-size: 2rem;
@@ -324,20 +339,27 @@ function updateLightUI(on) {
 
 controlEnableSwitch.onclick = function() {
     const newState = !controlEnabled;
+    // Optimistic UI update - instant feedback
+    updateControlUI(newState);
     fetch('/api/control_enable', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({enabled: newState})
     }).then(r => r.json()).then(data => {
+        // Confirm with server response
         updateControlUI(data.enabled);
     }).catch(error => {
         console.error('Error toggling control:', error);
+        // Revert on error
+        updateControlUI(controlEnabled);
     });
 };
 
 lightSwitch.onclick = function() {
     const newState = !lightOn;
     console.log('Light button clicked, sending:', newState);
+    // Optimistic UI update - instant feedback
+    updateLightUI(newState);
     fetch('/api/light', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -346,12 +368,88 @@ lightSwitch.onclick = function() {
     .then(r => r.json())
     .then(data => {
         console.log('Light response:', data);
+        // Confirm with server response
         updateLightUI(data.on);
     })
     .catch(error => {
         console.error('Error toggling light:', error);
+        // Revert on error
+        updateLightUI(lightOn);
     });
 };
+
+// Server-Sent Events for real-time sync across devices
+let eventSource = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+
+function connectSSE() {
+    if (eventSource) {
+        eventSource.close();
+    }
+    
+    eventSource = new EventSource('/api/events');
+    
+    eventSource.addEventListener('light_changed', function(e) {
+        const data = JSON.parse(e.data);
+        updateLightUI(data.on);
+        console.log('Light changed via SSE:', data.on);
+    });
+    
+    eventSource.addEventListener('control_enable_changed', function(e) {
+        const data = JSON.parse(e.data);
+        updateControlUI(data.enabled);
+        console.log('Control enable changed via SSE:', data.enabled);
+    });
+    
+    eventSource.addEventListener('control_settings_changed', function(e) {
+        const data = JSON.parse(e.data);
+        // Update display values
+        document.getElementById('current_target').textContent = data.target?.toFixed(2) ?? '--';
+        document.getElementById('current_deviation').textContent = data.deviation?.toFixed(2) ?? '--';
+        // Update inputs if not focused and not dirty
+        const targetInput = document.getElementById('targetInput');
+        const deviationInput = document.getElementById('deviationInput');
+        if (document.activeElement !== targetInput && !targetInput.dataset.dirty) {
+            targetInput.value = data.target?.toFixed(1) ?? '';
+        }
+        if (document.activeElement !== deviationInput && !deviationInput.dataset.dirty) {
+            deviationInput.value = data.deviation?.toFixed(1) ?? '';
+        }
+        console.log('Control settings changed via SSE:', data);
+    });
+    
+    eventSource.onopen = function() {
+        console.log('SSE connected');
+        reconnectAttempts = 0;
+    };
+    
+    eventSource.onerror = function(error) {
+        console.error('SSE error:', error);
+        eventSource.close();
+        
+        // Attempt to reconnect with exponential backoff
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+            console.log(`Reconnecting SSE in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+            setTimeout(connectSSE, delay);
+        } else {
+            console.warn('Max SSE reconnect attempts reached. Will retry on next page interaction.');
+        }
+    };
+}
+
+// Connect SSE on page load
+connectSSE();
+
+// Reconnect SSE on user activity if disconnected
+document.addEventListener('click', function() {
+    if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+        reconnectAttempts = 0;
+        connectSSE();
+    }
+}, {once: false, passive: true});
 
 // Round to nearest 0.5 and format with 1 decimal
 function roundToHalf(value) {
@@ -361,7 +459,7 @@ function roundToHalf(value) {
 
 function updateDashboard() {
     fetch('/api/temps_named', {
-        signal: AbortSignal.timeout(10000)  // 10 second timeout for slow sensor reads
+        signal: AbortSignal.timeout(15000)  // 15 second timeout for slow sensor reads
     })
     .then(r => r.json())
     .then(data => {
@@ -376,7 +474,7 @@ function updateDashboard() {
     });
     
     fetch('/api/status', {
-        signal: AbortSignal.timeout(10000)  // 10 second timeout for slow sensor reads
+        signal: AbortSignal.timeout(15000)  // 15 second timeout for slow sensor reads
     })
     .then(r => r.json())
     .then(data => {
@@ -469,7 +567,7 @@ document.getElementById('targetForm').onsubmit = function(e) {
 document.getElementById('targetInput').dataset.dirty = '';
 document.getElementById('deviationInput').dataset.dirty = '';
 updateDashboard(); // Load initial state immediately
-setInterval(updateDashboard, 2000); // Refresh every 2 seconds (cache updates every 1-5s)
+setInterval(updateDashboard, 3000); // Refresh every 3 seconds (was 1s)
 setInterval(checkWatchdog, 5000); // Check watchdog every 5 seconds
 
 // Screensaver functionality

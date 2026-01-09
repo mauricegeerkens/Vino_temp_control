@@ -1,64 +1,77 @@
-# --- Imports ---
-import csv
-import time
 import json
 import subprocess
 import atexit
 import threading
 import os
+import time
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, request, render_template
+from queue import Queue, Empty
+from flask import Flask, jsonify, request, render_template, Response
 from sensor_reader import read_sensors, read_sensors_by_id, get_offsets, set_offset
 from control import TempController
 
 # --- Dual Sensor Cache System ---
-# Control cache: Only Room + SafetySensor, read frequently for fast control
+# Control cache: Populated by background polling thread every 20s
 control_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
-CONTROL_CACHE_DURATION = 2.0  # Increased from 1s to 2s - reduces I/O by 50%
+CONTROL_CACHE_DURATION = 20.0  # 20s cache, updated by background sensor thread
 
 # Display cache: All sensors for UI, read less frequently to avoid slowdown
 display_cache = {'data': None, 'timestamp': None, 'lock': threading.Lock()}
-DISPLAY_CACHE_DURATION = 10.0  # Increased from 5s to 10s - reduces UI load
+DISPLAY_CACHE_DURATION = 10.0  # 10s cache to reduce sensor read frequency
 
 watchdog_timestamp = time.time()  # Global watchdog timestamp
 
+# --- Server-Sent Events for Real-Time Updates ---
+sse_clients = []  # List of SSE client queues
+sse_lock = threading.Lock()
+
+# Utility: run a potentially slow callable with a timeout to avoid blocking API responses
+def _run_with_timeout(fn, timeout, *args, **kwargs):
+    outcome = {'done': False, 'result': None, 'error': None}
+
+    def target():
+        try:
+            outcome['result'] = fn(*args, **kwargs)
+        except Exception as e:
+            outcome['error'] = e
+        finally:
+            outcome['done'] = True
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout)
+
+    if not outcome['done']:
+        print(f"WARNING: {fn.__name__} timed out after {timeout}s - thread still running")
+        return None, TimeoutError(f"{fn.__name__} timed out after {timeout}s")
+    if outcome['error'] is not None:
+        return None, outcome['error']
+    return outcome['result'], None
+
+def notify_clients(event_type, data):
+    """Send update to all connected SSE clients"""
+    with sse_lock:
+        dead_clients = []
+        for client_queue in sse_clients:
+            try:
+                client_queue.put_nowait({'type': event_type, 'data': data})
+            except:
+                dead_clients.append(client_queue)
+        # Remove dead clients
+        for dead in dead_clients:
+            sse_clients.remove(dead)
+
 def get_control_sensors():
-    """Get Room + SafetySensor only - fast, for control loop"""
-    global watchdog_timestamp
-    watchdog_timestamp = time.time()
-    
+    """Get Room + SafetySensor from cache - NEVER blocks on sensor reads"""
+    # Simply return cached data - background thread keeps it updated every 20s
     with control_cache['lock']:
-        now = time.time()
-        if (control_cache['data'] is None or 
-            control_cache['timestamp'] is None or 
-            (now - control_cache['timestamp']) > CONTROL_CACHE_DURATION):
-            # Read only the sensors needed for control using IDs from settings
-            room_id = settings.get('room_sensor_id', '28-mock001')
-            safety_id = settings.get('safety_sensor_id', '')
-            
-            # Build list of sensors to read (only read if IDs are configured)
-            sensor_ids = [room_id] if room_id else []
-            if safety_id:
-                sensor_ids.append(safety_id)
-            
-            control_cache['data'] = read_sensors_by_id(sensor_ids) if sensor_ids else []
-            control_cache['timestamp'] = now
-        return control_cache['data']
+        return control_cache['data'] or []
 
 def get_all_sensors():
-    """Get all sensors - slower, for UI display only"""
-    global watchdog_timestamp
-    watchdog_timestamp = time.time()
-    
+    """Get all sensors from cache - NEVER blocks on sensor reads"""
+    # Simply return cached data - background thread keeps it updated every 20s
     with display_cache['lock']:
-        now = time.time()
-        if (display_cache['data'] is None or 
-            display_cache['timestamp'] is None or 
-            (now - display_cache['timestamp']) > DISPLAY_CACHE_DURATION):
-            # Read all sensors for display
-            display_cache['data'] = read_sensors()
-            display_cache['timestamp'] = now
-        return display_cache['data']
+        return display_cache['data'] or []
 
 # --- GPIO Setup ---
 try:
@@ -226,12 +239,12 @@ def cleanup_loop():
 
 # --- Control Loop ---
 def control_loop():
-    """Background thread that controls heating/cooling relays"""
+    """Background thread that controls heating/cooling relays - uses cached sensor data"""
     print("Control loop started")
     while True:
         try:
             if control_enabled:
-                # Read all sensors for frost protection
+                # Get all sensors from cache (non-blocking) for frost protection
                 sensors = get_all_sensors()
                 
                 # Get sensor IDs from settings
@@ -267,11 +280,68 @@ def control_loop():
         except Exception as e:
             print(f"Error in control loop: {e}")
         
-        time.sleep(2)  # Check every 2 seconds (matches control cache duration)
+        time.sleep(1)  # Check every 1 second for faster response
 
 # Start control loop in background thread
 control_thread = threading.Thread(target=control_loop, daemon=True)
 control_thread.start()
+
+# --- Sensor Polling Thread ---
+def sensor_polling_loop():
+    """Background thread that polls sensors every 20s and updates cache"""
+    print("Sensor polling thread started - updating cache every 20 seconds")
+    global watchdog_timestamp
+    
+    while True:
+        try:
+            # Read all sensors for comprehensive data
+            sensors, error = _run_with_timeout(read_sensors, 15.0)
+            
+            if error:
+                print(f"Warning: sensor polling failed: {error}")
+            elif sensors:
+                # Update display cache with all sensors
+                with display_cache['lock']:
+                    display_cache['data'] = sensors
+                    display_cache['timestamp'] = time.time()
+                
+                # Update control cache with filtered sensors (Room + Safety only)
+                room_id = settings.get('room_sensor_id', '28-mock001')
+                safety_id = settings.get('safety_sensor_id', '')
+                
+                control_sensors = [s for s in sensors if s.get('id') in [room_id, safety_id]]
+                
+                with control_cache['lock']:
+                    control_cache['data'] = control_sensors
+                    control_cache['timestamp'] = time.time()
+                
+                watchdog_timestamp = time.time()
+                print(f"Sensor cache updated: {len(sensors)} total, {len(control_sensors)} for control")
+            else:
+                print("Warning: sensor polling returned no data")
+                
+        except Exception as e:
+            print(f"Error in sensor polling loop: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Wait 20 seconds before next poll
+        time.sleep(20)
+
+# Start sensor polling thread FIRST to populate cache
+sensor_thread = threading.Thread(target=sensor_polling_loop, daemon=True)
+sensor_thread.start()
+
+# Wait briefly for initial sensor data
+print("Waiting for initial sensor data...")
+for i in range(30):  # Wait up to 30 seconds
+    with control_cache['lock']:
+        if control_cache['data'] is not None:
+            print(f"Initial sensor data loaded after {i+1} seconds")
+            break
+    time.sleep(1)
+else:
+    print("Warning: Timed out waiting for initial sensor data, continuing anyway")
 
 # Start cleanup loop in background thread
 cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
@@ -303,6 +373,8 @@ def api_light():
     GPIO.output(LIGHT_PIN, GPIO.HIGH if light_on else GPIO.LOW)
     save_light_state(light_on)
     print(f"GPIO {LIGHT_PIN} set successfully")
+    # Notify all clients
+    notify_clients('light_changed', {'on': light_on})
     return jsonify({'on': light_on}), 200
 
 @app.route('/api/light', methods=['GET'])
@@ -321,6 +393,8 @@ def api_control_enable():
     enabled = data.get('enabled', True)
     control_enabled = bool(enabled)
     save_control_enabled(control_enabled)
+    # Notify all clients
+    notify_clients('control_enable_changed', {'enabled': control_enabled})
     return jsonify({'enabled': control_enabled}), 200
 
 @app.route('/api/offsets', methods=['GET'])
@@ -363,7 +437,12 @@ def get_temps():
 def get_temps_named():
     """Return temperatures with names from settings"""
     try:
+        # Try to get sensors with a very short wait - prefer cached data
         sensors = get_all_sensors()
+        if not sensors:
+            # Return empty dict instead of error to keep UI responsive
+            return jsonify({})
+        
         sensor_names = settings.get('sensor_names', {})
         safety_sensor_id = settings.get('safety_sensor_id', '')
         temps_by_name = {}
@@ -380,7 +459,8 @@ def get_temps_named():
         print(f"Error in /api/temps_named: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        # Return empty dict instead of 500 to keep UI responsive
+        return jsonify({})
 
 @app.route('/api/control', methods=['POST'])
 def set_control():
@@ -405,6 +485,11 @@ def set_control():
             pass
     if changed:
         save_settings(settings)
+        # Notify all clients of settings change
+        notify_clients('control_settings_changed', {
+            'target': controller.target,
+            'deviation': controller.deviation
+        })
     return jsonify({'target': controller.target, 'deviation': controller.deviation}), 200
 
 @app.route('/api/control', methods=['GET'])
@@ -461,22 +546,29 @@ def set_sensor_name():
 @app.route('/api/status')
 def get_status():
     try:
-        # Use control cache - only Room + SafetySensor, updated every 2 seconds
-        sensors = get_control_sensors()
+        # Get all sensors for display - prefer cached data for speed
+        sensors = get_all_sensors()
         room_temp = None
         safety_temp = None
+        all_temps = {}
         
         # Get sensor IDs from settings
         room_id = settings.get('room_sensor_id', '28-mock001')
         safety_id = settings.get('safety_sensor_id', '')
+        sensor_names = settings.get('sensor_names', {})
         
-        for sensor in sensors:
-            sensor_id = sensor.get('id', '')
-            temp = sensor.get('temperature', None)
-            if sensor_id == room_id:
-                room_temp = temp
-            elif safety_id and sensor_id == safety_id:
-                safety_temp = temp
+        if sensors:  # Only process if we have sensor data
+            for sensor in sensors:
+                sensor_id = sensor.get('id', '')
+                temp = sensor.get('temperature', None)
+                # Build all temps dictionary with names
+                name = sensor_names.get(sensor_id, sensor_id)
+                all_temps[name] = temp
+                
+                if sensor_id == room_id:
+                    room_temp = temp
+                elif safety_id and sensor_id == safety_id:
+                    safety_temp = temp
         
         # Return ACTUAL controller state, not recalculated values
         status = {
@@ -487,6 +579,7 @@ def get_status():
             'deviation': controller.deviation,
             'room_temp': room_temp,
             'safety_temp': safety_temp,
+            'temps': all_temps,  # Add all sensor temperatures
             'heating_blocked': controller.heating_blocked,
             'cooling_blocked': controller.cooling_blocked,
             'min_temp': controller.min_temp,
@@ -500,10 +593,51 @@ def get_status():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+# --- Server-Sent Events Endpoint ---
+@app.route('/api/events')
+def sse_events():
+    """Server-Sent Events endpoint for real-time updates"""
+    def event_stream():
+        client_queue = Queue(maxsize=10)
+        with sse_lock:
+            sse_clients.append(client_queue)
+        try:
+            while True:
+                try:
+                    # Wait for events with timeout to send periodic heartbeats
+                    event = client_queue.get(timeout=30)
+                    yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+                except Empty:
+                    # Send heartbeat comment to keep connection alive
+                    yield ": heartbeat\n\n"
+        except GeneratorExit:
+            # Client disconnected
+            with sse_lock:
+                if client_queue in sse_clients:
+                    sse_clients.remove(client_queue)
+    
+    return Response(event_stream(), mimetype='text/event-stream',
+                   headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
 # --- Page Routes ---
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    # Suppress missing favicon errors in the browser console
+    return Response(status=204)
+
+@app.route('/api/health')
+def health_check():
+    """Simple health check endpoint that doesn't depend on sensors"""
+    return jsonify({
+        'status': 'ok',
+        'timestamp': time.time(),
+        'control_enabled': control_enabled,
+        'light_on': light_on
+    })
 
 @app.route('/history')
 def history():
@@ -579,4 +713,6 @@ def settings_page():
 if __name__ == "__main__":
     # Allow port to be configured via environment variable for development
     port = int(os.environ.get('FLASK_PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # Enable threading to handle multiple concurrent requests
+    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
+
