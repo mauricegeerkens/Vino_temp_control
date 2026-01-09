@@ -57,6 +57,51 @@
         max-width: 100px !important;
       }
     }
+    .sensor-checkbox {
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+      padding: 0.25rem 0.5rem;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 0.25rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .sensor-checkbox:hover {
+      background: rgba(255,255,255,0.15);
+    }
+    .sensor-checkbox input[type="checkbox"] {
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+    }
+    .sensor-checkbox label {
+      cursor: pointer;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .sensor-color-box {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+    @media (max-width: 576px) {
+      .sensor-checkbox {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.4rem;
+      }
+      .sensor-color-box {
+        width: 10px;
+        height: 10px;
+      }
+    }
     </style>
 </head>
 <body class="bg-dark text-light">
@@ -97,6 +142,38 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Sensor Visibility Controls -->
+            <div class="d-flex flex-wrap gap-1 mt-2 justify-content-center">
+                <div class="sensor-checkbox">
+                    <label>
+                        <input type="checkbox" id="showRoom" checked>
+                        <span class="sensor-color-box" style="background-color: #FF6384;"></span>
+                        <span>Room</span>
+                    </label>
+                </div>
+                <div class="sensor-checkbox">
+                    <label>
+                        <input type="checkbox" id="showJohanniter" checked>
+                        <span class="sensor-color-box" style="background-color: #36A2EB;"></span>
+                        <span>Johanniter</span>
+                    </label>
+                </div>
+                <div class="sensor-checkbox">
+                    <label>
+                        <input type="checkbox" id="showSolaris" checked>
+                        <span class="sensor-color-box" style="background-color: #FFCE56;"></span>
+                        <span>Solaris</span>
+                    </label>
+                </div>
+                <div class="sensor-checkbox">
+                    <label>
+                        <input type="checkbox" id="showSouvignier" checked>
+                        <span class="sensor-color-box" style="background-color: #4BC0C0;"></span>
+                        <span>Souvignier gris</span>
+                    </label>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -117,6 +194,14 @@ let showDailyAverages = false;
 let daysBack = 0;  // How many days back from today (0 = today)
 let daysRange = 7;  // Configurable range
 
+// Sensor visibility state
+let visibleSensors = {
+  'Room': true,
+  'Johanniter': true,
+  'Solaris': true,
+  'Souvignier gris': true
+};
+
 const colorMap = {
   'Room': '#FF6384',
   'Johanniter': '#36A2EB',
@@ -125,6 +210,24 @@ const colorMap = {
 };
 
 const knownSensors = ['Room', 'Johanniter', 'Solaris', 'Souvignier gris'];
+
+// Sensor visibility checkbox handlers
+document.getElementById('showRoom').onchange = function() {
+  visibleSensors['Room'] = this.checked;
+  renderChart();
+};
+document.getElementById('showJohanniter').onchange = function() {
+  visibleSensors['Johanniter'] = this.checked;
+  renderChart();
+};
+document.getElementById('showSolaris').onchange = function() {
+  visibleSensors['Solaris'] = this.checked;
+  renderChart();
+};
+document.getElementById('showSouvignier').onchange = function() {
+  visibleSensors['Souvignier gris'] = this.checked;
+  renderChart();
+};
 
 // Range selector handler
 document.getElementById('rangeSelector').onchange = function() {
@@ -235,15 +338,18 @@ function renderChart() {
   
   const sensors = showDailyAverages ? aggregateDailyData(rawData) : rawData;
   
-  const datasets = Object.keys(sensors).map(name => ({
-    label: name,
-    data: sensors[name],
-    fill: false,
-    borderColor: colorMap[name],
-    tension: 0.1,
-    borderWidth: 2,
-    pointRadius: showDailyAverages ? 4 : 2
-  }));
+  // Filter datasets based on visible sensors
+  const datasets = Object.keys(sensors)
+    .filter(name => visibleSensors[name])  // Only include visible sensors
+    .map(name => ({
+      label: name,
+      data: sensors[name],
+      fill: false,
+      borderColor: colorMap[name],
+      tension: 0.1,
+      borderWidth: 2,
+      pointRadius: showDailyAverages ? 4 : 2
+    }));
   
   // Calculate date range for x-axis bounds
   const endDate = new Date();

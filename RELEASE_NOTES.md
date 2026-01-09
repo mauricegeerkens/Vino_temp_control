@@ -1,5 +1,25 @@
 # Vino Temperature Control - Release Notes
 
+## Version 3.3 - January 2026
+
+### New Features
+
+**Sensor Visibility Toggles for Historical Chart**:
+- Added checkboxes to show/hide individual sensors on the chart
+- Each sensor has a color-coded checkbox matching its line color
+- Toggles for: Room, Johanniter, Solaris, and Souvignier gris
+- Instant chart update when toggling sensor visibility
+- All sensors visible by default
+- Useful for focusing on specific sensors or comparing subsets
+
+### Improvements
+- Color-coded checkboxes for better visual association
+- Mobile-friendly checkbox styling
+- Responsive layout for sensor controls
+- Smooth chart updates without reloading data
+
+---
+
 ## Version 3.2 - January 2026
 
 ### New Features
