@@ -1,5 +1,24 @@
 # Vino Temperature Control - Release Notes
 
+## Version 3.2 - January 2026
+
+### New Features
+
+**Configurable Time Range for Historical Chart**:
+- Added time range selector dropdown on history page
+- Available options: 12 hours, 24 hours, 2, 3, 4, 5, 6, and 7 days
+- Chart automatically adjusts time scale based on selected range
+- For 12/24 hour views, x-axis shows hours instead of days
+- Date range display adapts to show hours or days as appropriate
+- Improved chart readability for short time periods
+
+### Improvements
+- Better mobile styling for the time range selector
+- Dynamic chart time unit selection (hours vs days)
+- Optimized tick marks for different time ranges
+
+---
+
 ## Version 3.1 - January 2026
 
 ### Bug Fixes
