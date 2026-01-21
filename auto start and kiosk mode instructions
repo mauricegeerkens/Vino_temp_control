@@ -1,0 +1,38 @@
+Autostart application
+
+open terminal:
+
+sudo nano /etc/systemd/system/vino_temp_control.service
+
+[Unit]
+Description=Vino Temp Control Flask App
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/mgee/Project/Vino_temp_control-0.5/app.py
+WorkingDirectory=/home/mgee/Project/Vino_temp_control-0.5
+Restart=always
+User=pi
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+
+
+Autostart browser 
+
+create folder:
+
+mkdir -p ~/.config/autostart
+nano ~/.config/autostart/chromium-kiosk.desktop
+
+Entry:
+
+[Desktop Entry]
+Type=Application
+Exec=chromium-browser --kiosk http://localhost:5000
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Chromium Kiosk
+
